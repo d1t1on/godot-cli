@@ -1,0 +1,15 @@
+config_version=5
+
+[application]
+
+config/name="Godot Playwright Example"
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.6")
+
+[autoload]
+
+GodotPlaywright="*res://addons/godot_playwright/runtime_autoload.gd"
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/godot_playwright/plugin.cfg")

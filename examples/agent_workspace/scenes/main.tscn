@@ -1,0 +1,164 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
+[ext_resource type="PackedScene" path="res://scenes/secondary.tscn" id="2_secondary"]
+[ext_resource type="PackedScene" path="res://scenes/panels/status_panel.tscn" id="3_status_panel"]
+[ext_resource type="Resource" path="res://resources/agent_profile.tres" id="4_profile"]
+
+[node name="Main" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_main")
+metadata/profile = ExtResource("4_profile")
+metadata/test_id = "main"
+
+[node name="Title" type="Label" parent="."]
+layout_mode = 0
+offset_left = 24.0
+offset_top = 24.0
+offset_right = 260.0
+offset_bottom = 58.0
+text = "Godot Playwright"
+metadata/test_id = "title"
+
+[node name="CounterButton" type="Button" parent="."]
+layout_mode = 0
+offset_left = 24.0
+offset_top = 78.0
+offset_right = 172.0
+offset_bottom = 118.0
+text = "Clicked 0"
+metadata/test_id = "counter-button"
+
+[node name="NameInput" type="LineEdit" parent="."]
+layout_mode = 0
+offset_left = 24.0
+offset_top = 138.0
+offset_right = 260.0
+offset_bottom = 178.0
+placeholder_text = "Name"
+metadata/test_id = "name-input"
+
+[node name="EchoLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 24.0
+offset_top = 194.0
+offset_right = 320.0
+offset_bottom = 228.0
+text = "Hello"
+metadata/test_id = "echo"
+
+[node name="StatusPanel" parent="." instance=ExtResource("3_status_panel")]
+layout_mode = 0
+offset_left = 540.0
+offset_top = 24.0
+offset_right = 780.0
+offset_bottom = 128.0
+
+[node name="AcceptTerms" type="CheckBox" parent="."]
+layout_mode = 0
+offset_left = 24.0
+offset_top = 236.0
+offset_right = 260.0
+offset_bottom = 276.0
+text = "Accept terms"
+metadata/last_toggled = false
+metadata/test_id = "accept-terms"
+
+[node name="ThemeSelect" type="OptionButton" parent="."]
+layout_mode = 0
+offset_left = 24.0
+offset_top = 284.0
+offset_right = 260.0
+offset_bottom = 324.0
+metadata/test_id = "theme-select"
+
+[node name="VolumeSlider" type="HSlider" parent="."]
+layout_mode = 0
+offset_left = 24.0
+offset_top = 332.0
+offset_right = 260.0
+offset_bottom = 360.0
+min_value = 0.0
+max_value = 100.0
+value = 25.0
+metadata/test_id = "volume-slider"
+
+[node name="ModeTabs" type="TabBar" parent="."]
+layout_mode = 0
+offset_left = 24.0
+offset_top = 376.0
+offset_right = 260.0
+offset_bottom = 416.0
+metadata/test_id = "mode-tabs"
+
+[node name="ActionMenu" type="MenuButton" parent="."]
+layout_mode = 0
+offset_left = 320.0
+offset_top = 324.0
+offset_right = 500.0
+offset_bottom = 364.0
+text = "Actions"
+metadata/test_id = "action-menu"
+
+[node name="InventoryList" type="ItemList" parent="."]
+layout_mode = 0
+offset_left = 320.0
+offset_top = 24.0
+offset_right = 500.0
+offset_bottom = 144.0
+metadata/test_id = "inventory-list"
+
+[node name="QuestTree" type="Tree" parent="."]
+layout_mode = 0
+offset_left = 320.0
+offset_top = 164.0
+offset_right = 500.0
+offset_bottom = 304.0
+metadata/test_id = "quest-tree"
+
+[node name="TouchTarget" type="ColorRect" parent="."]
+layout_mode = 0
+offset_left = 320.0
+offset_top = 376.0
+offset_right = 380.0
+offset_bottom = 416.0
+mouse_filter = 0
+color = Color(0.6, 0.25, 0.85, 1)
+metadata/touch_pressed = false
+metadata/touch_released = false
+metadata/touch_dragged = false
+metadata/touch_index = -1
+metadata/test_id = "touch-target"
+
+[node name="ShowConfirmButton" type="Button" parent="."]
+layout_mode = 0
+offset_left = 390.0
+offset_top = 376.0
+offset_right = 500.0
+offset_bottom = 416.0
+text = "Show Confirm"
+metadata/test_id = "show-confirm"
+
+[node name="NextSceneButton" type="Button" parent="."]
+layout_mode = 0
+offset_left = 24.0
+offset_top = 436.0
+offset_right = 172.0
+offset_bottom = 476.0
+text = "Next Scene"
+metadata/target_scene = ExtResource("2_secondary")
+metadata/test_id = "next-scene"
+
+[node name="ConfirmDialog" type="ConfirmationDialog" parent="."]
+title = "Confirm Action"
+initial_position = 2
+size = Vector2i(320, 120)
+visible = false
+dialog_text = "Run the agent action?"
+metadata/result = ""
+metadata/test_id = "confirm-dialog"

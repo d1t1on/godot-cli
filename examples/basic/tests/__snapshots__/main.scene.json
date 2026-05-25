@@ -1,0 +1,537 @@
+{
+  "children": [
+    {
+      "children": [],
+      "class": "Label",
+      "name": "Title",
+      "properties": {
+        "global_position": {
+          "$type": "Vector2",
+          "x": 24.0,
+          "y": 24.0
+        },
+        "modulate": {
+          "$type": "Color",
+          "a": 1.0,
+          "b": 1.0,
+          "g": 1.0,
+          "r": 1.0
+        },
+        "name": "Title",
+        "position": {
+          "$type": "Vector2",
+          "x": 24.0,
+          "y": 24.0
+        },
+        "rotation": 0.0,
+        "scale": {
+          "$type": "Vector2",
+          "x": 1.0,
+          "y": 1.0
+        },
+        "text": "Godot Playwright",
+        "visible": true
+      }
+    },
+    {
+      "children": [],
+      "class": "Button",
+      "name": "CounterButton",
+      "properties": {
+        "button_pressed": false,
+        "disabled": false,
+        "global_position": {
+          "$type": "Vector2",
+          "x": 24.0,
+          "y": 78.0
+        },
+        "modulate": {
+          "$type": "Color",
+          "a": 1.0,
+          "b": 1.0,
+          "g": 1.0,
+          "r": 1.0
+        },
+        "name": "CounterButton",
+        "position": {
+          "$type": "Vector2",
+          "x": 24.0,
+          "y": 78.0
+        },
+        "rotation": 0.0,
+        "scale": {
+          "$type": "Vector2",
+          "x": 1.0,
+          "y": 1.0
+        },
+        "text": "Clicked 0",
+        "visible": true
+      }
+    },
+    {
+      "children": [],
+      "class": "LineEdit",
+      "name": "NameInput",
+      "properties": {
+        "editable": true,
+        "global_position": {
+          "$type": "Vector2",
+          "x": 24.0,
+          "y": 138.0
+        },
+        "modulate": {
+          "$type": "Color",
+          "a": 1.0,
+          "b": 1.0,
+          "g": 1.0,
+          "r": 1.0
+        },
+        "name": "NameInput",
+        "placeholder_text": "Name",
+        "position": {
+          "$type": "Vector2",
+          "x": 24.0,
+          "y": 138.0
+        },
+        "rotation": 0.0,
+        "scale": {
+          "$type": "Vector2",
+          "x": 1.0,
+          "y": 1.0
+        },
+        "text": "",
+        "visible": true
+      }
+    },
+    {
+      "children": [],
+      "class": "Label",
+      "name": "EchoLabel",
+      "properties": {
+        "global_position": {
+          "$type": "Vector2",
+          "x": 24.0,
+          "y": 194.0
+        },
+        "modulate": {
+          "$type": "Color",
+          "a": 1.0,
+          "b": 1.0,
+          "g": 1.0,
+          "r": 1.0
+        },
+        "name": "EchoLabel",
+        "position": {
+          "$type": "Vector2",
+          "x": 24.0,
+          "y": 194.0
+        },
+        "rotation": 0.0,
+        "scale": {
+          "$type": "Vector2",
+          "x": 1.0,
+          "y": 1.0
+        },
+        "text": "Hello",
+        "visible": true
+      }
+    },
+    {
+      "children": [],
+      "class": "CheckBox",
+      "name": "AcceptTerms",
+      "properties": {
+        "button_pressed": false,
+        "disabled": false,
+        "global_position": {
+          "$type": "Vector2",
+          "x": 24.0,
+          "y": 236.0
+        },
+        "modulate": {
+          "$type": "Color",
+          "a": 1.0,
+          "b": 1.0,
+          "g": 1.0,
+          "r": 1.0
+        },
+        "name": "AcceptTerms",
+        "position": {
+          "$type": "Vector2",
+          "x": 24.0,
+          "y": 236.0
+        },
+        "rotation": 0.0,
+        "scale": {
+          "$type": "Vector2",
+          "x": 1.0,
+          "y": 1.0
+        },
+        "text": "Accept terms",
+        "visible": true
+      }
+    },
+    {
+      "children": [],
+      "class": "OptionButton",
+      "name": "ThemeSelect",
+      "properties": {
+        "button_pressed": false,
+        "disabled": false,
+        "global_position": {
+          "$type": "Vector2",
+          "x": 24.0,
+          "y": 284.0
+        },
+        "item_count": 3,
+        "modulate": {
+          "$type": "Color",
+          "a": 1.0,
+          "b": 1.0,
+          "g": 1.0,
+          "r": 1.0
+        },
+        "name": "ThemeSelect",
+        "position": {
+          "$type": "Vector2",
+          "x": 24.0,
+          "y": 284.0
+        },
+        "rotation": 0.0,
+        "scale": {
+          "$type": "Vector2",
+          "x": 1.0,
+          "y": 1.0
+        },
+        "text": "Arcade",
+        "visible": true
+      }
+    },
+    {
+      "children": [],
+      "class": "HSlider",
+      "name": "VolumeSlider",
+      "properties": {
+        "editable": true,
+        "global_position": {
+          "$type": "Vector2",
+          "x": 24.0,
+          "y": 332.0
+        },
+        "modulate": {
+          "$type": "Color",
+          "a": 1.0,
+          "b": 1.0,
+          "g": 1.0,
+          "r": 1.0
+        },
+        "name": "VolumeSlider",
+        "position": {
+          "$type": "Vector2",
+          "x": 24.0,
+          "y": 332.0
+        },
+        "rotation": 0.0,
+        "scale": {
+          "$type": "Vector2",
+          "x": 1.0,
+          "y": 1.0
+        },
+        "value": 25.0,
+        "visible": true
+      }
+    },
+    {
+      "children": [],
+      "class": "TabBar",
+      "name": "ModeTabs",
+      "properties": {
+        "current_tab": 0,
+        "global_position": {
+          "$type": "Vector2",
+          "x": 24.0,
+          "y": 376.0
+        },
+        "modulate": {
+          "$type": "Color",
+          "a": 1.0,
+          "b": 1.0,
+          "g": 1.0,
+          "r": 1.0
+        },
+        "name": "ModeTabs",
+        "position": {
+          "$type": "Vector2",
+          "x": 24.0,
+          "y": 376.0
+        },
+        "rotation": 0.0,
+        "scale": {
+          "$type": "Vector2",
+          "x": 1.0,
+          "y": 1.0
+        },
+        "tab_count": 3,
+        "visible": true
+      }
+    },
+    {
+      "children": [],
+      "class": "MenuButton",
+      "name": "ActionMenu",
+      "properties": {
+        "button_pressed": false,
+        "disabled": false,
+        "global_position": {
+          "$type": "Vector2",
+          "x": 320.0,
+          "y": 324.0
+        },
+        "item_count": 3,
+        "modulate": {
+          "$type": "Color",
+          "a": 1.0,
+          "b": 1.0,
+          "g": 1.0,
+          "r": 1.0
+        },
+        "name": "ActionMenu",
+        "position": {
+          "$type": "Vector2",
+          "x": 320.0,
+          "y": 324.0
+        },
+        "rotation": 0.0,
+        "scale": {
+          "$type": "Vector2",
+          "x": 1.0,
+          "y": 1.0
+        },
+        "text": "Actions",
+        "visible": true
+      }
+    },
+    {
+      "children": [],
+      "class": "ItemList",
+      "name": "InventoryList",
+      "properties": {
+        "global_position": {
+          "$type": "Vector2",
+          "x": 320.0,
+          "y": 24.0
+        },
+        "item_count": 3,
+        "modulate": {
+          "$type": "Color",
+          "a": 1.0,
+          "b": 1.0,
+          "g": 1.0,
+          "r": 1.0
+        },
+        "name": "InventoryList",
+        "position": {
+          "$type": "Vector2",
+          "x": 320.0,
+          "y": 24.0
+        },
+        "rotation": 0.0,
+        "scale": {
+          "$type": "Vector2",
+          "x": 1.0,
+          "y": 1.0
+        },
+        "select_mode": 0,
+        "visible": true
+      }
+    },
+    {
+      "children": [
+        {
+          "children": [],
+          "class": "Timer",
+          "name": "@Timer@33",
+          "properties": {
+            "name": "@Timer@33"
+          }
+        }
+      ],
+      "class": "Tree",
+      "name": "QuestTree",
+      "properties": {
+        "columns": 1,
+        "global_position": {
+          "$type": "Vector2",
+          "x": 320.0,
+          "y": 164.0
+        },
+        "modulate": {
+          "$type": "Color",
+          "a": 1.0,
+          "b": 1.0,
+          "g": 1.0,
+          "r": 1.0
+        },
+        "name": "QuestTree",
+        "position": {
+          "$type": "Vector2",
+          "x": 320.0,
+          "y": 164.0
+        },
+        "rotation": 0.0,
+        "scale": {
+          "$type": "Vector2",
+          "x": 1.0,
+          "y": 1.0
+        },
+        "select_mode": 0,
+        "visible": true
+      }
+    },
+    {
+      "children": [],
+      "class": "ColorRect",
+      "name": "TouchTarget",
+      "properties": {
+        "global_position": {
+          "$type": "Vector2",
+          "x": 320.0,
+          "y": 376.0
+        },
+        "modulate": {
+          "$type": "Color",
+          "a": 1.0,
+          "b": 1.0,
+          "g": 1.0,
+          "r": 1.0
+        },
+        "name": "TouchTarget",
+        "position": {
+          "$type": "Vector2",
+          "x": 320.0,
+          "y": 376.0
+        },
+        "rotation": 0.0,
+        "scale": {
+          "$type": "Vector2",
+          "x": 1.0,
+          "y": 1.0
+        },
+        "visible": true
+      }
+    },
+    {
+      "children": [],
+      "class": "Button",
+      "name": "ShowConfirmButton",
+      "properties": {
+        "button_pressed": false,
+        "disabled": false,
+        "global_position": {
+          "$type": "Vector2",
+          "x": 390.0,
+          "y": 376.0
+        },
+        "modulate": {
+          "$type": "Color",
+          "a": 1.0,
+          "b": 1.0,
+          "g": 1.0,
+          "r": 1.0
+        },
+        "name": "ShowConfirmButton",
+        "position": {
+          "$type": "Vector2",
+          "x": 390.0,
+          "y": 376.0
+        },
+        "rotation": 0.0,
+        "scale": {
+          "$type": "Vector2",
+          "x": 1.0,
+          "y": 1.0
+        },
+        "text": "Show Confirm",
+        "visible": true
+      }
+    },
+    {
+      "children": [],
+      "class": "Button",
+      "name": "NextSceneButton",
+      "properties": {
+        "button_pressed": false,
+        "disabled": false,
+        "global_position": {
+          "$type": "Vector2",
+          "x": 24.0,
+          "y": 436.0
+        },
+        "modulate": {
+          "$type": "Color",
+          "a": 1.0,
+          "b": 1.0,
+          "g": 1.0,
+          "r": 1.0
+        },
+        "name": "NextSceneButton",
+        "position": {
+          "$type": "Vector2",
+          "x": 24.0,
+          "y": 436.0
+        },
+        "rotation": 0.0,
+        "scale": {
+          "$type": "Vector2",
+          "x": 1.0,
+          "y": 1.0
+        },
+        "text": "Next Scene",
+        "visible": true
+      }
+    },
+    {
+      "children": [],
+      "class": "ConfirmationDialog",
+      "name": "ConfirmDialog",
+      "properties": {
+        "name": "ConfirmDialog",
+        "position": {
+          "$type": "Vector2i",
+          "x": 0,
+          "y": 0
+        },
+        "visible": false
+      }
+    }
+  ],
+  "class": "Control",
+  "name": "Main",
+  "properties": {
+    "global_position": {
+      "$type": "Vector2",
+      "x": 0.0,
+      "y": 0.0
+    },
+    "modulate": {
+      "$type": "Color",
+      "a": 1.0,
+      "b": 1.0,
+      "g": 1.0,
+      "r": 1.0
+    },
+    "name": "Main",
+    "position": {
+      "$type": "Vector2",
+      "x": 0.0,
+      "y": 0.0
+    },
+    "rotation": 0.0,
+    "scale": {
+      "$type": "Vector2",
+      "x": 1.0,
+      "y": 1.0
+    },
+    "visible": true
+  }
+}

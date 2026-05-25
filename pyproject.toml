@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "godot-playwright"
+version = "0.1.0"
+description = "Playwright-style local automation bridge for Godot editor and runtime."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Godot Playwright contributors" }]
+dependencies = []
+
+[project.scripts]
+godot-playwright = "godot_playwright.cli:main"
+
+[tool.setuptools]
+packages = ["godot_playwright"]
+
+[tool.setuptools.package-data]
+godot_playwright = ["bundled_addons/godot_playwright/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

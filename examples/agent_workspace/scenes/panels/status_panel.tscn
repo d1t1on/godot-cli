@@ -1,0 +1,21 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/panels/status_panel.gd" id="1_status_panel"]
+
+[node name="StatusPanel" type="PanelContainer"]
+custom_minimum_size = Vector2(240, 96)
+script = ExtResource("1_status_panel")
+metadata/test_id = "status-panel"
+
+[node name="VBox" type="VBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="StateLabel" type="Label" parent="VBox"]
+layout_mode = 2
+text = "Booting"
+metadata/test_id = "status-state"
+
+[node name="DetailLabel" type="Label" parent="VBox"]
+layout_mode = 2
+text = "{}"
+metadata/test_id = "status-details"

@@ -1,0 +1,16 @@
+config_version=5
+
+[application]
+
+config/name="AgentWorkspace"
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.6")
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/godot_playwright/plugin.cfg")
+
+[autoload]
+
+WorkspaceState="*res://scripts/systems/workspace_state.gd"
+GodotPlaywright="*res://addons/godot_playwright/runtime_autoload.gd"
