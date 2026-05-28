@@ -7,6 +7,8 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 
+from .process import isolated_godot_env
+
 
 class ProbeError(RuntimeError):
     def __init__(self, report: dict[str, Any]):
@@ -60,6 +62,7 @@ def probe_project(
             text=True,
             timeout=timeout,
             check=False,
+            env=isolated_godot_env(),
         )
         timed_out = False
         exit_code = int(completed.returncode)

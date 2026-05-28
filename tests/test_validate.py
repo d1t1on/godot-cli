@@ -112,6 +112,7 @@ class ProjectValidationTests(unittest.TestCase):
             self.assertEqual(check_scripts.call_args.args[:2], (project.resolve(), ["res://scenes"]))
             self.assertEqual(check_scripts.call_args.kwargs["exclude"], ["addons/**"])
             self.assertEqual(check_scripts.call_args.kwargs["executable"], "godot-test")
+            self.assertTrue(check_scripts.call_args.kwargs["ensure_import_cache"])
             check_resources.assert_called_once()
             inspect_scenes.assert_called_once()
             probe_scenes.assert_called_once()
@@ -225,6 +226,12 @@ class ProjectValidationTests(unittest.TestCase):
         self.assertEqual(validate.call_args.kwargs["exclude"], ["addons/**"])
         self.assertFalse(validate.call_args.kwargs["skip_inventory"])
         self.assertTrue(validate.call_args.kwargs["skip_runtime"])
+        self.assertTrue(validate.call_args.kwargs["ensure_import_cache"])
+
+        with mock.patch("godot_playwright.cli.validate_project", return_value=report) as validate:
+            with redirect_stdout(StringIO()):
+                cli_main(["validate", "/tmp/project", "--no-import-cache"])
+        self.assertFalse(validate.call_args.kwargs["ensure_import_cache"])
 
 
 if __name__ == "__main__":

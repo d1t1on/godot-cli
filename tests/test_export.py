@@ -53,6 +53,7 @@ class ExportUnitTests(unittest.TestCase):
             self.assertTrue(report["output_matches_preset"])
             self.assertTrue(report["preset_output_state"]["exists"])
             self.assertEqual(report["preset_output_state"]["bytes"], 3)
+            self.assertEqual(run.call_args.kwargs["env"]["GODOT_PLAYWRIGHT_PORT"], "0")
             self.assertEqual(report["export_presets"]["count"], 1)
             self.assertFalse(report["output_preexisting"])
             self.assertTrue(report["output_changed"])

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .inventory import inspect_export_presets
+from .process import isolated_godot_env
 from .probe import summarize_godot_output
 
 
@@ -70,6 +71,7 @@ def export_project(
             text=True,
             timeout=timeout,
             check=False,
+            env=isolated_godot_env(),
         )
         timed_out = False
         exit_code = int(completed.returncode)

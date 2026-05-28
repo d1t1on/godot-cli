@@ -102,6 +102,7 @@ def main(argv: list[str] | None = None) -> int:
     check_script_parser.add_argument("--artifacts-dir", default="godot-playwright-report")
     check_script_parser.add_argument("--log-path", default="")
     check_script_parser.add_argument("--extra-arg", action="append", default=[], help="Additional Godot CLI argument.")
+    check_script_parser.add_argument("--no-import-cache", action="store_true", help="Skip the pre-check Godot import/cache warmup.")
     check_script_parser.add_argument("--json", action="store_true", help="Print the full JSON check report.")
 
     check_scripts_parser = subparsers.add_parser("check-scripts", help="Run Godot's GDScript parser for project scripts.")
@@ -113,6 +114,7 @@ def main(argv: list[str] | None = None) -> int:
     check_scripts_parser.add_argument("--timeout", type=float, default=60.0)
     check_scripts_parser.add_argument("--artifacts-dir", default="godot-playwright-report")
     check_scripts_parser.add_argument("--extra-arg", action="append", default=[], help="Additional Godot CLI argument.")
+    check_scripts_parser.add_argument("--no-import-cache", action="store_true", help="Skip the pre-check Godot import/cache warmup.")
     check_scripts_parser.add_argument("--json", action="store_true", help="Print the full JSON check report.")
 
     check_resources_parser = subparsers.add_parser(
@@ -178,6 +180,7 @@ def main(argv: list[str] | None = None) -> int:
     validate_parser.add_argument("--artifacts-dir", default="godot-playwright-report")
     validate_parser.add_argument("--frames", type=int, default=5, help="Frames for runtime scene probes.")
     validate_parser.add_argument("--extra-arg", action="append", default=[], help="Additional Godot CLI argument.")
+    validate_parser.add_argument("--no-import-cache", action="store_true", help="Skip the pre-check Godot import/cache warmup.")
     validate_parser.add_argument("--allow-runtime-errors", action="store_true")
     validate_parser.add_argument("--skip-inventory", action="store_true")
     validate_parser.add_argument("--skip-scripts", action="store_true")
@@ -313,6 +316,7 @@ def main(argv: list[str] | None = None) -> int:
                 artifacts_dir=args.artifacts_dir,
                 log_path=args.log_path or None,
                 extra_args=args.extra_arg,
+                ensure_import_cache=not args.no_import_cache,
             )
             if args.json:
                 _print_json(report)
@@ -330,6 +334,7 @@ def main(argv: list[str] | None = None) -> int:
                 timeout=args.timeout,
                 artifacts_dir=args.artifacts_dir,
                 extra_args=args.extra_arg,
+                ensure_import_cache=not args.no_import_cache,
             )
             if args.json:
                 _print_json(report)
@@ -410,6 +415,7 @@ def main(argv: list[str] | None = None) -> int:
                 artifacts_dir=args.artifacts_dir,
                 frames=args.frames,
                 extra_args=args.extra_arg,
+                ensure_import_cache=not args.no_import_cache,
                 allow_runtime_errors=args.allow_runtime_errors,
                 skip_inventory=args.skip_inventory,
                 skip_scripts=args.skip_scripts,

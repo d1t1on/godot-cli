@@ -40,8 +40,11 @@ class ScriptCheckUnitTests(unittest.TestCase):
 
             self.assertTrue(report["ok"])
             self.assertEqual(report["diagnostic_count"], 0)
+            self.assertTrue(report["import_cache"]["ok"])
             self.assertIn("--check-only", report["command"])
             self.assertIn("res://scripts/agent.gd", report["command"])
+            self.assertIn("--import", run.call_args_list[0].args[0])
+            self.assertEqual(run.call_args_list[0].kwargs["env"]["GODOT_PLAYWRIGHT_PORT"], "0")
             self.assertTrue(Path(report["log_path"]).exists())
             self.assertEqual(run.call_args.kwargs["cwd"], project.resolve())
 
@@ -157,6 +160,12 @@ class ScriptCheckUnitTests(unittest.TestCase):
         self.assertIn("PASS script res://scripts/agent.gd", stdout.getvalue())
         check.assert_called_once()
         self.assertEqual(check.call_args.args[:2], ("/tmp/project", "res://scripts/agent.gd"))
+        self.assertTrue(check.call_args.kwargs["ensure_import_cache"])
+
+        with mock.patch("godot_playwright.cli.check_script", return_value=report) as check:
+            with redirect_stdout(StringIO()):
+                cli_main(["check-script", "/tmp/project", "res://scripts/agent.gd", "--no-import-cache"])
+        self.assertFalse(check.call_args.kwargs["ensure_import_cache"])
 
     def test_check_project_scripts_discovers_and_aggregates(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -189,10 +198,15 @@ class ScriptCheckUnitTests(unittest.TestCase):
                     "log_path": f"/tmp/{Path(str(script)).name}.log",
                 }
 
-            with mock.patch("godot_playwright.checks.check_script", side_effect=fake_check):
+            with (
+                mock.patch("godot_playwright.checks.ensure_project_import_cache", return_value={"enabled": True, "ok": True}) as ensure,
+                mock.patch("godot_playwright.checks.check_script", side_effect=fake_check),
+            ):
                 report = check_project_scripts(project, ["res://scripts", "res://addons"], exclude=["addons/**"])
 
             self.assertFalse(report["ok"])
+            ensure.assert_called_once()
+            self.assertTrue(report["import_cache"]["ok"])
             self.assertEqual(report["script_count"], 2)
             self.assertEqual(report["passed"], 1)
             self.assertEqual(report["failed"], 1)
@@ -226,6 +240,12 @@ class ScriptCheckUnitTests(unittest.TestCase):
         check.assert_called_once()
         self.assertEqual(check.call_args.args[:2], ("/tmp/project", ["res://scripts"]))
         self.assertEqual(check.call_args.kwargs["exclude"], ["addons/**"])
+        self.assertTrue(check.call_args.kwargs["ensure_import_cache"])
+
+        with mock.patch("godot_playwright.cli.check_project_scripts", return_value=report) as check:
+            with redirect_stdout(StringIO()):
+                cli_main(["check-scripts", "/tmp/project", "res://scripts", "--no-import-cache"])
+        self.assertFalse(check.call_args.kwargs["ensure_import_cache"])
 
     def test_check_resource_dependencies_reports_missing_ext_resources(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -369,6 +389,25 @@ class ScriptCheckIntegrationTests(unittest.TestCase):
             self.assertEqual(project_report["passed"], 1)
             self.assertEqual(project_report["failed"], 1)
             self.assertEqual(project_report["diagnostics"][0]["script"], "res://scripts/agent_invalid.gd")
+
+    def test_check_project_scripts_warms_global_class_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Script Class Cache Probe")
+            scripts = project / "scripts"
+            (scripts / "agent_base.gd").write_text("class_name AgentBase\nextends Node\n", encoding="utf-8")
+            (scripts / "agent_child.gd").write_text("extends AgentBase\n\nfunc value() -> int:\n\treturn 1\n", encoding="utf-8")
+            shutil.rmtree(project / ".godot", ignore_errors=True)
+
+            report = check_project_scripts(
+                project,
+                ["res://scripts/agent_child.gd"],
+                artifacts_dir=root / "artifacts",
+            )
+
+            self.assertTrue(report["import_cache"]["ok"], report["import_cache"]["stdout_tail"])
+            self.assertTrue(report["ok"], report["diagnostics"])
+            self.assertEqual(report["passed"], 1)
 
 
 if __name__ == "__main__":

@@ -34,6 +34,7 @@ class ProbeUnitTests(unittest.TestCase):
             self.assertIn("--scene", report["command"])
             self.assertTrue(Path(report["log_path"]).exists())
             self.assertEqual(run.call_args.kwargs["cwd"], project.resolve())
+            self.assertEqual(run.call_args.kwargs["env"]["GODOT_PLAYWRIGHT_PORT"], "0")
 
     def test_probe_project_detects_logged_errors_and_can_raise(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

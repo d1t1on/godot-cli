@@ -67,6 +67,24 @@ class GodotIntegrationTests(unittest.TestCase):
                 self.assertGreaterEqual(process_after["process_frames"], clock_start["process_frames"] + 2)
                 process_ticks = int(main.call("get_meta", "process_ticks", 0))
                 self.assertGreaterEqual(process_ticks, 1)
+                paused = godot.pause()
+                self.assertTrue(paused["paused"])
+                paused_ticks = int(main.call("get_meta", "process_ticks", 0))
+                godot.wait_for_timeout(50)
+                self.assertEqual(int(main.call("get_meta", "process_ticks", 0)), paused_ticks)
+                stepped = godot.step_frames(1, timeout=2)
+                self.assertTrue(stepped["paused"])
+                self.assertGreaterEqual(int(main.call("get_meta", "process_ticks", 0)), paused_ticks + 1)
+                samples = godot.sample_frames(
+                    2,
+                    selectors="#CounterButton",
+                    expressions={"ticks": 'root.get_meta("process_ticks", 0)'},
+                    timeout=2,
+                )
+                self.assertEqual(samples["count"], 2)
+                self.assertEqual(samples["samples"][0]["selector_count"], 1)
+                self.assertEqual(samples["samples"][0]["expression_count"], 1)
+                godot.resume()
                 physics_start = process_after["physics_frames"]
                 physics_after = godot.wait_for_physics_frames(1, timeout=2)
                 self.assertGreaterEqual(physics_after["physics_frames"], physics_start + 1)

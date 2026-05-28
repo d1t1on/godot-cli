@@ -786,6 +786,91 @@ class GodotClient:
     def clock(self) -> dict[str, Any]:
         return self.rpc("runtime.clock")
 
+    def pause(self) -> dict[str, Any]:
+        return self.rpc("runtime.pause")
+
+    def resume(self) -> dict[str, Any]:
+        return self.rpc("runtime.resume")
+
+    def step_frames(
+        self,
+        frames: int = 1,
+        *,
+        physics: bool = False,
+        timeout: float = 5.0,
+        interval: float = 0.01,
+    ) -> dict[str, Any]:
+        if frames < 0:
+            raise ValueError("frames must be >= 0")
+        scheduled = self.rpc("runtime.step_frames", {"frames": int(frames), "physics": bool(physics)})
+        counter_name = "physics_frames" if physics else "process_frames"
+        target = int(scheduled.get("target_frame", scheduled.get("step_target", 0)))
+        deadline = time.monotonic() + timeout
+        last = scheduled
+        while True:
+            last = self.clock()
+            if int(last.get(counter_name, 0)) >= target and not bool(last.get("step_active", False)):
+                result = dict(last)
+                result["scheduled"] = scheduled
+                return result
+            if time.monotonic() >= deadline:
+                raise GodotPlaywrightError(
+                    f"Timed out stepping {frames} {counter_name} to {target}; last={last!r} scheduled={scheduled!r}"
+                )
+            time.sleep(interval)
+
+    def sample_frames(
+        self,
+        frames: int,
+        *,
+        selectors: list[str | dict[str, Any]] | str | dict[str, Any] | None = None,
+        expressions: list[str | dict[str, Any]] | dict[str, Any] | str | None = None,
+        include_snapshot: bool = False,
+        root: str | dict[str, Any] | None = None,
+        max_depth: int = 8,
+        include_properties: bool = False,
+        physics: bool = False,
+        timeout: float = 5.0,
+        interval: float = 0.01,
+        restore: bool = True,
+    ) -> dict[str, Any]:
+        if frames < 1:
+            raise ValueError("frames must be >= 1")
+        start = self.clock()
+        was_paused = bool(start.get("paused", False))
+        samples: list[dict[str, Any]] = []
+        self.pause()
+        try:
+            params = {
+                "frames": 1,
+                "selectors": _frame_sample_sequence(selectors),
+                "expressions": _frame_sample_expressions(expressions),
+                "include_snapshot": include_snapshot,
+                "root": root or "edited",
+                "max_depth": max_depth,
+                "include_properties": include_properties,
+            }
+            for index in range(frames):
+                payload = self.rpc("runtime.sample_frames", params)
+                for sample in payload.get("samples", []):
+                    if isinstance(sample, dict):
+                        sample = dict(sample)
+                        sample["sample_index"] = len(samples)
+                        samples.append(sample)
+                if index < frames - 1:
+                    self.step_frames(1, physics=physics, timeout=timeout, interval=interval)
+        finally:
+            if restore and not was_paused:
+                self.resume()
+        return {
+            "samples": samples,
+            "count": len(samples),
+            "frames": int(frames),
+            "physics": bool(physics),
+            "started_paused": was_paused,
+            "restored": bool(restore and not was_paused),
+        }
+
     def wait_for_process_frames(
         self,
         frames: int = 1,
@@ -8074,6 +8159,7 @@ class Godot:
         self.mode = mode
         self.executable = executable
         self.host = host
+        self._explicit_port = port is not None
         self.port = port or find_free_port(host)
         self.headless = headless
         self.install = install
@@ -8086,6 +8172,7 @@ class Godot:
         self.process: subprocess.Popen[Any] | None = None
         self.client = GodotClient(host, self.port, timeout=timeout)
         self._log_collector: _GodotLogCollector | None = None
+        self.port_retry_count = 0
 
     def __enter__(self) -> GodotClient:
         self.start()
@@ -8102,6 +8189,25 @@ class Godot:
                 autoload=bool(self.autoload),
             )
 
+        attempts = 1 if self._explicit_port else 3
+        last_error: BaseException | None = None
+        for attempt in range(attempts):
+            if attempt > 0:
+                self.port = find_free_port(self.host)
+                self.client = GodotClient(self.host, self.port, timeout=self.timeout)
+                self.port_retry_count = attempt
+            try:
+                return self._start_once()
+            except BaseException as exc:
+                last_error = exc
+                should_retry = attempt < attempts - 1 and self._start_failure_may_be_port_race(exc)
+                self.close()
+                if not should_retry:
+                    raise
+        assert last_error is not None
+        raise last_error
+
+    def _start_once(self) -> GodotClient:
         env = os.environ.copy()
         env["GODOT_PLAYWRIGHT_HOST"] = self.host
         env["GODOT_PLAYWRIGHT_PORT"] = str(self.port)
@@ -8145,6 +8251,16 @@ class Godot:
             self.close()
             raise
         return self.client
+
+    def _start_failure_may_be_port_race(self, error: BaseException) -> bool:
+        if self._explicit_port:
+            return False
+        text = str(error).lower()
+        if self._log_collector is not None:
+            text += "\n" + self._log_collector.text().lower()
+        if "failed to listen" in text or "address already in use" in text:
+            return True
+        return "did not become ready" in text
 
     def close(self) -> None:
         if self.process is None:
@@ -14424,6 +14540,26 @@ def _screenshot_local_path(result: dict[str, Any]) -> Path | None:
     if "://" in path_text and not Path(path_text).is_absolute():
         return None
     return Path(path_text)
+
+
+def _frame_sample_sequence(value: list[str | dict[str, Any]] | str | dict[str, Any] | None) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(value, (str, dict)):
+        return [value]
+    return list(value)
+
+
+def _frame_sample_expressions(value: list[str | dict[str, Any]] | dict[str, Any] | str | None) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        if "expression" in value:
+            return [value]
+        return [{"name": str(name), "expression": expression} for name, expression in value.items()]
+    return list(value)
 
 
 def _editor_filesystem_entry_matches(

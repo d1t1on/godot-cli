@@ -7,6 +7,8 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 
+from .process import isolated_godot_env
+
 
 TEXT_RESOURCE_EXTENSIONS = {".tscn", ".tres"}
 EXT_RESOURCE_PATTERN = re.compile(r"^\s*\[ext_resource\b(?P<body>[^\]]*)\]")
@@ -148,11 +150,21 @@ def check_project_scripts(
     timeout: float = 60.0,
     artifacts_dir: str | Path = "godot-playwright-report",
     extra_args: list[str] | None = None,
+    ensure_import_cache: bool = True,
     check: bool = False,
 ) -> dict[str, Any]:
     project_path = Path(project).expanduser().resolve()
     started = time.monotonic()
     scripts = _discover_scripts(project_path, paths or [], exclude or [])
+    import_cache = ensure_project_import_cache(
+        project_path,
+        executable=executable,
+        headless=headless,
+        timeout=timeout,
+        artifacts_dir=artifacts_dir,
+        extra_args=extra_args,
+        log_name="godot-import-cache.log",
+    ) if ensure_import_cache else _disabled_import_cache_report()
     reports = [
         check_script(
             project_path,
@@ -162,26 +174,29 @@ def check_project_scripts(
             timeout=timeout,
             artifacts_dir=artifacts_dir,
             extra_args=extra_args,
+            ensure_import_cache=False,
         )
         for script in scripts
     ]
     failed_reports = [report for report in reports if not report.get("ok")]
-    diagnostics = []
+    diagnostics = _import_cache_failure_diagnostics(import_cache)
     for report in failed_reports:
         for diagnostic in report.get("diagnostics", []):
             merged = dict(diagnostic)
             merged["script"] = report.get("script")
             merged["log_path"] = report.get("log_path")
             diagnostics.append(merged)
+    import_cache_failed = ensure_import_cache and not bool(import_cache.get("ok", False))
     report = {
         "project": str(project_path),
-        "ok": not failed_reports,
+        "ok": not failed_reports and not import_cache_failed,
         "script_count": len(reports),
         "passed": len(reports) - len(failed_reports),
         "failed": len(failed_reports),
         "scripts": reports,
         "diagnostics": diagnostics,
         "diagnostic_count": len(diagnostics),
+        "import_cache": import_cache,
         "duration_ms": round((time.monotonic() - started) * 1000.0, 3),
     }
     if check and not report["ok"]:
@@ -199,6 +214,7 @@ def check_script(
     artifacts_dir: str | Path = "godot-playwright-report",
     log_path: str | Path | None = None,
     extra_args: list[str] | None = None,
+    ensure_import_cache: bool = True,
     check: bool = False,
 ) -> dict[str, Any]:
     project_path = Path(project).expanduser().resolve()
@@ -214,6 +230,16 @@ def check_script(
         if not log.is_absolute():
             log = project_path / log
         log.parent.mkdir(parents=True, exist_ok=True)
+
+    import_cache = ensure_project_import_cache(
+        project_path,
+        executable=executable,
+        headless=headless,
+        timeout=timeout,
+        artifacts_dir=artifacts,
+        extra_args=extra_args,
+        log_name=f"{_safe_name(str(script_path))}-import-cache.log",
+    ) if ensure_import_cache else _disabled_import_cache_report()
 
     cmd = [executable]
     if headless:
@@ -232,6 +258,7 @@ def check_script(
             text=True,
             timeout=timeout,
             check=False,
+            env=isolated_godot_env(),
         )
         timed_out = False
         exit_code = int(completed.returncode)
@@ -246,7 +273,9 @@ def check_script(
             stdout = str(stdout_value)
     duration_ms = round((time.monotonic() - started) * 1000.0, 3)
     log.write_text(stdout, encoding="utf-8")
-    diagnostics = _parse_godot_diagnostics(stdout)
+    diagnostics = _import_cache_failure_diagnostics(import_cache)
+    diagnostics.extend(_parse_godot_diagnostics(stdout))
+    import_cache_failed = ensure_import_cache and not bool(import_cache.get("ok", False))
     report = {
         "project": str(project_path),
         "script": str(script_path),
@@ -255,11 +284,12 @@ def check_script(
         "log_path": str(log),
         "command": cmd,
         "exit_code": exit_code,
-        "ok": exit_code == 0 and not timed_out,
+        "ok": exit_code == 0 and not timed_out and not import_cache_failed,
         "timed_out": timed_out,
         "duration_ms": duration_ms,
         "diagnostics": diagnostics,
         "diagnostic_count": len(diagnostics),
+        "import_cache": import_cache,
         "stdout_tail": _tail(stdout),
     }
     if check and not report["ok"]:
@@ -278,6 +308,7 @@ class ScriptFileExpect:
         check_timeout: float = 60.0,
         artifacts_dir: str | Path = "godot-playwright-report",
         extra_args: list[str] | None = None,
+        ensure_import_cache: bool = True,
     ):
         self.project = Path(project).expanduser().resolve()
         self.script_path = script_path
@@ -286,6 +317,7 @@ class ScriptFileExpect:
         self.check_timeout = check_timeout
         self.artifacts_dir = artifacts_dir
         self.extra_args = extra_args or []
+        self.ensure_import_cache = ensure_import_cache
 
     def to_exist(self, *, timeout: float = 5.0, interval: float = 0.05) -> dict[str, Any]:
         return self._wait_for_source(
@@ -473,6 +505,7 @@ class ScriptFileExpect:
                 timeout=self.check_timeout,
                 artifacts_dir=self.artifacts_dir,
                 extra_args=list(self.extra_args),
+                ensure_import_cache=self.ensure_import_cache,
             )
             if predicate(last):
                 return transform(last) if transform is not None else last
@@ -490,6 +523,7 @@ def expect_script_file(
     check_timeout: float = 60.0,
     artifacts_dir: str | Path = "godot-playwright-report",
     extra_args: list[str] | None = None,
+    ensure_import_cache: bool = True,
 ) -> ScriptFileExpect:
     return ScriptFileExpect(
         project,
@@ -499,7 +533,98 @@ def expect_script_file(
         check_timeout=check_timeout,
         artifacts_dir=artifacts_dir,
         extra_args=extra_args,
+        ensure_import_cache=ensure_import_cache,
     )
+
+
+def ensure_project_import_cache(
+    project: str | Path,
+    *,
+    executable: str = "godot",
+    headless: bool = True,
+    timeout: float = 60.0,
+    artifacts_dir: str | Path = "godot-playwright-report",
+    extra_args: list[str] | None = None,
+    log_name: str = "godot-import-cache.log",
+) -> dict[str, Any]:
+    project_path = Path(project).expanduser().resolve()
+    artifacts = Path(artifacts_dir)
+    if not artifacts.is_absolute():
+        artifacts = Path.cwd() / artifacts
+    artifacts.mkdir(parents=True, exist_ok=True)
+    log = artifacts / log_name
+    cmd = [executable]
+    if headless:
+        cmd.append("--headless")
+    cmd.extend(["--path", str(project_path), "--import"])
+    if extra_args:
+        cmd.extend(extra_args)
+
+    started = time.monotonic()
+    try:
+        completed = subprocess.run(
+            cmd,
+            cwd=project_path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=timeout,
+            check=False,
+            env=isolated_godot_env(),
+        )
+        timed_out = False
+        exit_code = int(completed.returncode)
+        stdout = completed.stdout or ""
+    except subprocess.TimeoutExpired as exc:
+        timed_out = True
+        exit_code = -1
+        stdout_value = exc.stdout if exc.stdout is not None else ""
+        if isinstance(stdout_value, bytes):
+            stdout = stdout_value.decode("utf-8", errors="replace")
+        else:
+            stdout = str(stdout_value)
+    duration_ms = round((time.monotonic() - started) * 1000.0, 3)
+    log.write_text(stdout, encoding="utf-8")
+    diagnostics = _parse_godot_diagnostics(stdout)
+    return {
+        "enabled": True,
+        "project": str(project_path),
+        "log_path": str(log),
+        "command": cmd,
+        "exit_code": exit_code,
+        "ok": exit_code == 0 and not timed_out,
+        "timed_out": timed_out,
+        "duration_ms": duration_ms,
+        "diagnostics": diagnostics,
+        "diagnostic_count": len(diagnostics),
+        "stdout_tail": _tail(stdout),
+    }
+
+
+def _disabled_import_cache_report() -> dict[str, Any]:
+    return {"enabled": False, "ok": True}
+
+
+def _import_cache_failure_diagnostics(import_cache: dict[str, Any]) -> list[dict[str, Any]]:
+    if not import_cache.get("enabled", False) or import_cache.get("ok", True):
+        return []
+    diagnostics = []
+    for diagnostic in import_cache.get("diagnostics", []):
+        if isinstance(diagnostic, dict):
+            merged = dict(diagnostic)
+            merged["phase"] = "import_cache"
+            merged["log_path"] = import_cache.get("log_path")
+            diagnostics.append(merged)
+    if diagnostics:
+        return diagnostics
+    return [
+        {
+            "severity": "error",
+            "kind": "IMPORT_CACHE_FAILED",
+            "message": "Godot import/cache warmup failed",
+            "log_path": import_cache.get("log_path"),
+        }
+    ]
 
 
 def _discover_resources(project_path: Path, paths: list[str | Path], exclude: list[str]) -> list[str]:

@@ -93,15 +93,17 @@ logged errors/warnings so agents can catch startup/runtime failures.
 probe-scenes` discover `.tscn`/`.scn` files, launch each scene with the same
 single-scene probe primitive, and aggregate per-scene pass/fail counts plus log
 diagnostics. Scene discovery supports selected paths and exclude globs.
-`check_script(project, script_path)` and `godot-playwright check-script` run
-Godot's `--check-only --script` parser and return structured diagnostics.
+`check_script(project, script_path)` and `godot-playwright check-script` warm
+Godot's import/global-class cache by default, then run `--check-only --script`
+and return structured diagnostics.
 `expect_script_file(project, script_path)` provides Playwright-style assertions
 for generated GDScript files, including file existence, source text, `extends`,
 `class_name`, function definitions, Godot parser success, and expected
 diagnostics.
 `check_project_scripts(project, paths=[...])` and `godot-playwright
 check-scripts` discover `.gd` files, aggregate per-script parser reports, and
-support exclude globs. `check_project_resources(project, paths=[...])` and
+support exclude globs. Pass `--no-import-cache` only to skip the pre-check cache
+warmup. `check_project_resources(project, paths=[...])` and
 `godot-playwright check-resources` discover text `.tscn`/`.tres` resources,
 parse external resource paths, and report missing dependencies before runtime or
 export. `inspect_scene(project, scene_path)` and `godot-playwright
@@ -228,6 +230,10 @@ matching positive and negative assertions.
   physics tick rate, time scale, and server uptime. Python helpers use this for
   `wait_for_process_frames()`, `wait_for_physics_frames()`, and
   `wait_for_idle()`.
+- `runtime.pause`, `runtime.resume`, `runtime.step_frames`, and
+  `runtime.sample_frames`: deterministic frame control for realtime gameplay
+  checks. Python exposes these as `pause()`, `resume()`, `step_frames()`, and
+  `sample_frames()`; prefer compact state samples over long screenshot runs.
 - `runtime.evaluate`: evaluate a Godot `Expression` against a root node. Inputs
   include `tree`, `root`, and caller-provided `variables`; Python exposes this as
   `evaluate()` and polling `wait_for_function()`.

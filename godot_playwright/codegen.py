@@ -305,6 +305,17 @@ def _single_event_line(event_type: str, data: dict[str, Any]) -> str | None:
         root = data.get("root")
         root_arg = "" if root in (None, "", "edited") else f", root={_py(root)}"
         return f"godot.evaluate({_py(data.get('expression', ''))}{root_arg})"
+    if event_type == "runtime.pause":
+        return "godot.pause()"
+    if event_type == "runtime.resume":
+        return "godot.resume()"
+    if event_type == "runtime.step_frames":
+        kwargs = []
+        if data.get("physics") is True:
+            kwargs.append(("physics", True))
+        return _call("godot.step_frames", [data.get("frames", 1)], kwargs)
+    if event_type == "runtime.sample_frames":
+        return "godot.sample_frames(1)"
     if event_type == "animation.play":
         kwargs = []
         if data.get("custom_blend", data.get("blend", -1.0)) != -1.0:

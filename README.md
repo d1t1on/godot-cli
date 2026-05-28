@@ -136,6 +136,10 @@ godot-playwright check-script /tmp/agent-game res://scripts/player.gd
 godot-playwright check-scripts /tmp/agent-game res://scripts --exclude "addons/**"
 ```
 
+Script checks run `godot --import` first by default so Godot can build the
+global `class_name` cache before `--check-only` parses scripts. Use
+`--no-import-cache` only when you explicitly need the older direct parser path.
+
 Runner tests can use the same parser as an assertion fixture:
 
 ```python
@@ -1178,6 +1182,9 @@ lists, and repeated controls.
 `godot.clock()` exposes Godot's process and physics frame counters, and
 `wait_for_process_frames()`, `wait_for_physics_frames()`, and `wait_for_idle()`
 wait against those counters for frame-driven game logic.
+For deterministic realtime gameplay checks, prefer `pause()`, `step_frames()`,
+and `sample_frames()` to large screenshot sequences. They advance exact process
+or physics frames and collect compact node/expression state for assertions.
 `godot.evaluate()` and `godot.wait_for_function()` run Godot `Expression`
 snippets against a root with `tree` and `root` inputs. `Locator.evaluate()` and
 `Locator.evaluate_all()` add `node` or `nodes`/`count` inputs, plus any variables

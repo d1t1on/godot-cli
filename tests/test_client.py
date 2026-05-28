@@ -8,8 +8,10 @@ import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 from godot_playwright import (
+    Godot,
     GodotClient,
     GodotPlaywrightError,
     expect,
@@ -577,6 +579,10 @@ _FAKE_PROTOCOL_METHODS = [
     "protocol.describe",
     "engine.info",
     "runtime.clock",
+    "runtime.pause",
+    "runtime.resume",
+    "runtime.step_frames",
+    "runtime.sample_frames",
     "runtime.evaluate",
     "tree.snapshot",
     "node.find",
@@ -744,6 +750,10 @@ def _fake_protocol_description(server: Any, params: dict[str, Any]) -> dict[str,
     def helper(method: str) -> str:
         aliases = {
             "runtime.clock": "clock",
+            "runtime.pause": "pause",
+            "runtime.resume": "resume",
+            "runtime.step_frames": "step_frames",
+            "runtime.sample_frames": "sample_frames",
             "runtime.evaluate": "evaluate",
             "tree.snapshot": "snapshot",
             "scene.current": "current_scene",
@@ -3273,18 +3283,67 @@ class FakeGodotHandler(BaseHTTPRequestHandler):
                 "width": self.server.viewport_width,  # type: ignore[attr-defined]
                 "height": self.server.viewport_height,  # type: ignore[attr-defined]
             }
+        elif method == "runtime.pause":
+            self.server.paused = True  # type: ignore[attr-defined]
+            self.server.step_active = False  # type: ignore[attr-defined]
+            result = self.server.clock_payload()  # type: ignore[attr-defined]
+        elif method == "runtime.resume":
+            self.server.paused = False  # type: ignore[attr-defined]
+            self.server.step_active = False  # type: ignore[attr-defined]
+            result = self.server.clock_payload()  # type: ignore[attr-defined]
+        elif method == "runtime.step_frames":
+            frames = max(0, int(params.get("frames", 1)))
+            physics = bool(params.get("physics", False))
+            counter = "physics_frames" if physics else "process_frames"
+            start_frame = self.server.physics_frames if physics else self.server.process_frames  # type: ignore[attr-defined]
+            self.server.step_counter = counter  # type: ignore[attr-defined]
+            self.server.step_target = start_frame + frames  # type: ignore[attr-defined]
+            self.server.step_active = frames > 0  # type: ignore[attr-defined]
+            self.server.paused = frames == 0  # type: ignore[attr-defined]
+            result = self.server.clock_payload()  # type: ignore[attr-defined]
+            result.update(
+                {
+                    "start_frame": start_frame,
+                    "target_frame": self.server.step_target,  # type: ignore[attr-defined]
+                    "frames": frames,
+                    "physics": physics,
+                }
+            )
+        elif method == "runtime.sample_frames":
+            result = {
+                "samples": [
+                    {
+                        "clock": self.server.clock_payload(),  # type: ignore[attr-defined]
+                        "selectors": [
+                            {
+                                "selector": selector,
+                                "found": True,
+                                "state": {"path": _fake_selector_path(selector), "visible": True},
+                                "bounds": {"path": _fake_selector_path(selector), "rect": {"x": 0, "y": 0, "width": 10, "height": 10}},
+                            }
+                            for selector in params.get("selectors", [])
+                        ],
+                        "selector_count": len(params.get("selectors", [])),
+                        "expressions": [
+                            {"expression": expression, "result": {"ok": True, "value": expression}}
+                            for expression in params.get("expressions", [])
+                        ],
+                        "expression_count": len(params.get("expressions", [])),
+                    }
+                ],
+                "count": 1,
+                "requested_frames": int(params.get("frames", 1)),
+            }
         elif method in {"engine.info", "runtime.clock"}:
             self.server.process_frames += 1  # type: ignore[attr-defined]
             if self.server.process_frames % 2 == 0:  # type: ignore[attr-defined]
                 self.server.physics_frames += 1  # type: ignore[attr-defined]
-            result = {
-                "uptime_ms": self.server.process_frames * 16,  # type: ignore[attr-defined]
-                "process_frames": self.server.process_frames,  # type: ignore[attr-defined]
-                "physics_frames": self.server.physics_frames,  # type: ignore[attr-defined]
-                "drawn_frames": self.server.process_frames,  # type: ignore[attr-defined]
-                "physics_ticks_per_second": 60,
-                "time_scale": 1.0,
-            }
+            if self.server.step_active:  # type: ignore[attr-defined]
+                current_frame = self.server.physics_frames if self.server.step_counter == "physics_frames" else self.server.process_frames  # type: ignore[attr-defined]
+                if current_frame >= self.server.step_target:  # type: ignore[attr-defined]
+                    self.server.step_active = False  # type: ignore[attr-defined]
+                    self.server.paused = True  # type: ignore[attr-defined]
+            result = self.server.clock_payload()  # type: ignore[attr-defined]
             if method == "engine.info":
                 result.update(
                     {
@@ -5089,6 +5148,10 @@ class FakeGodotServer(HTTPServer):
         self.trace_max_events = 1000
         self.process_frames = 0
         self.physics_frames = 0
+        self.paused = False
+        self.step_active = False
+        self.step_counter = "process_frames"
+        self.step_target = 0
         self.runtime_counter = 0
         self.animation_states: dict[str, dict[str, Any]] = {}
         self.viewport_width = 720
@@ -5150,6 +5213,20 @@ class FakeGodotServer(HTTPServer):
             "window_size": {"width": self.viewport_width, "height": self.viewport_height},
             "visible_rect": {"x": 0, "y": 0, "width": self.viewport_width, "height": self.viewport_height},
             "mouse_position": {"x": 0, "y": 0},
+        }
+
+    def clock_payload(self) -> dict[str, Any]:
+        return {
+            "uptime_ms": self.process_frames * 16,
+            "process_frames": self.process_frames,
+            "physics_frames": self.physics_frames,
+            "drawn_frames": self.process_frames,
+            "physics_ticks_per_second": 60,
+            "time_scale": 1.0,
+            "paused": self.paused,
+            "step_active": self.step_active,
+            "step_counter": self.step_counter,
+            "step_target": self.step_target,
         }
 
     def dialog_summary(self) -> dict[str, Any]:
@@ -5283,6 +5360,42 @@ class FakeGodotServer(HTTPServer):
         }
 
 
+class GodotLaunchTests(unittest.TestCase):
+    def test_auto_port_launch_retries_with_a_new_port_when_server_never_becomes_ready(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "project"
+            project.mkdir()
+            (project / "project.godot").write_text("config_version=5\n", encoding="utf-8")
+            first_process = mock.Mock()
+            first_process.stdout = None
+            first_process.poll.return_value = None
+            second_process = mock.Mock()
+            second_process.stdout = None
+            second_process.poll.return_value = None
+
+            with (
+                mock.patch("godot_playwright.client.install_addon"),
+                mock.patch("godot_playwright.client.find_free_port", side_effect=[10001, 10002]),
+                mock.patch("godot_playwright.client.subprocess.Popen", side_effect=[first_process, second_process]) as popen,
+                mock.patch.object(
+                    GodotClient,
+                    "wait_for_ready",
+                    side_effect=[GodotPlaywrightError("Godot Playwright server did not become ready"), None],
+                ),
+            ):
+                godot = Godot(project, executable="godot-test", capture_logs=False)
+                godot.start()
+                try:
+                    self.assertEqual(godot.port, 10002)
+                    self.assertEqual(godot.port_retry_count, 1)
+                    self.assertEqual(popen.call_count, 2)
+                    first_process.terminate.assert_called_once()
+                    self.assertIn("GODOT_PLAYWRIGHT_PORT", popen.call_args.kwargs["env"])
+                    self.assertEqual(popen.call_args.kwargs["env"]["GODOT_PLAYWRIGHT_PORT"], "10002")
+                finally:
+                    godot.close()
+
+
 class ClientTests(unittest.TestCase):
     def setUp(self) -> None:
         self.server = FakeGodotServer()
@@ -5347,6 +5460,30 @@ class ClientTests(unittest.TestCase):
         self.assertIn("uptime_ms", timeout_after)
         clock_calls = [method for method, _params in self.server.calls if method == "runtime.clock"]
         self.assertGreaterEqual(len(clock_calls), 5)
+
+    def test_runtime_frame_control_and_sampling(self) -> None:
+        paused = self.client.pause()
+        self.assertTrue(paused["paused"])
+
+        stepped = self.client.step_frames(2, timeout=0.2, interval=0.001)
+        self.assertTrue(stepped["paused"])
+        self.assertGreaterEqual(stepped["process_frames"], stepped["scheduled"]["target_frame"])
+
+        resumed = self.client.resume()
+        self.assertFalse(resumed["paused"])
+
+        samples = self.client.sample_frames(
+            2,
+            selectors="#CounterButton",
+            expressions={"counter": "root.name"},
+            timeout=0.2,
+            interval=0.001,
+        )
+        self.assertEqual(samples["count"], 2)
+        self.assertFalse(samples["started_paused"])
+        self.assertTrue(samples["restored"])
+        self.assertEqual(samples["samples"][0]["selector_count"], 1)
+        self.assertEqual(samples["samples"][0]["expression_count"], 1)
 
     def test_animation_helpers_call_rpc(self) -> None:
         player = self.client.locator("#AutomationAnimation")

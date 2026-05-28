@@ -27,6 +27,7 @@ def validate_project(
     artifacts_dir: str | Path = "godot-playwright-report",
     frames: int = 5,
     extra_args: list[str] | None = None,
+    ensure_import_cache: bool = True,
     allow_runtime_errors: bool = False,
     skip_scripts: bool = False,
     skip_inventory: bool = False,
@@ -57,6 +58,7 @@ def validate_project(
             timeout=timeout,
             artifacts_dir=artifacts_dir,
             extra_args=extra_args,
+            ensure_import_cache=ensure_import_cache,
         )
     if not skip_resources:
         checks["resources"] = check_project_resources(
