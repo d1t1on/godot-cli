@@ -27,11 +27,51 @@ from .runner import TestRunnerError, format_report, run_tests
 from .scene import SceneInspectError, inspect_scene
 from .validate import ProjectValidationError, validate_project
 
+_AUTO_PORT = "auto"
+_LAUNCH_COMMANDS = {"launch", "smoke"}
+_CLIENT_COMMANDS = {"health", "snapshot", "rpc"}
+
+
+def _parse_port_arg(value: str) -> int | str:
+    if str(value).lower() == _AUTO_PORT:
+        return _AUTO_PORT
+    try:
+        port = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("port must be an integer or 'auto'") from exc
+    if port < 0 or port > 65535:
+        raise argparse.ArgumentTypeError("port must be between 0 and 65535")
+    return port
+
+
+def _add_command_connection_args(parser: argparse.ArgumentParser, *, allow_auto: bool = False) -> None:
+    parser.add_argument("--host", dest="command_host", default=None)
+    help_text = "Server port"
+    if allow_auto:
+        help_text += ", or 'auto' to allocate a free port"
+    parser.add_argument("--port", dest="command_port", type=_parse_port_arg, default=None, help=help_text)
+
+
+def _normalize_connection_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    args.host = getattr(args, "command_host", None) or args.host or "127.0.0.1"
+    raw_port = getattr(args, "command_port", None)
+    if raw_port is None:
+        raw_port = args.port
+    default_auto = args.command in _LAUNCH_COMMANDS
+    if raw_port == _AUTO_PORT:
+        if args.command in _CLIENT_COMMANDS:
+            parser.error(f"{args.command} cannot use --port auto because it does not launch Godot")
+        args.port = None
+    elif raw_port is None:
+        args.port = None if default_auto else 9777
+    else:
+        args.port = int(raw_port)
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="godot-playwright")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=9777)
+    parser.add_argument("--host", default=None)
+    parser.add_argument("--port", type=_parse_port_arg, default=None, help="Server port, or 'auto' for launch/smoke.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     init_parser = subparsers.add_parser("init", help="Create a small Godot project prepared for automation.")
@@ -52,13 +92,16 @@ def main(argv: list[str] | None = None) -> int:
     launch_parser.add_argument("--no-headless", action="store_true")
     launch_parser.add_argument("--no-install", action="store_true")
     launch_parser.add_argument("--autoload", action="store_true", help="Force runtime autoload installation.")
+    _add_command_connection_args(launch_parser, allow_auto=True)
 
-    subparsers.add_parser("health", help="Read server health.")
+    health_parser = subparsers.add_parser("health", help="Read server health.")
+    _add_command_connection_args(health_parser)
 
     snapshot_parser = subparsers.add_parser("snapshot", help="Print a scene tree snapshot.")
     snapshot_parser.add_argument("--root", default="edited")
     snapshot_parser.add_argument("--max-depth", type=int, default=8)
     snapshot_parser.add_argument("--include-properties", action="store_true")
+    _add_command_connection_args(snapshot_parser)
 
     smoke_parser = subparsers.add_parser("smoke", help="Launch Godot and run a structured automation smoke check.")
     smoke_parser.add_argument("project")
@@ -66,6 +109,7 @@ def main(argv: list[str] | None = None) -> int:
     smoke_parser.add_argument("--godot", default="godot")
     smoke_parser.add_argument("--no-headless", action="store_true")
     smoke_parser.add_argument("--save-path", default="res://scenes/godot_playwright_smoke.tscn")
+    _add_command_connection_args(smoke_parser, allow_auto=True)
 
     probe_parser = subparsers.add_parser("probe", help="Launch a runtime scene briefly and report Godot log errors.")
     probe_parser.add_argument("project")
@@ -242,8 +286,10 @@ def main(argv: list[str] | None = None) -> int:
     rpc_parser = subparsers.add_parser("rpc", help="Invoke an RPC method.")
     rpc_parser.add_argument("method")
     rpc_parser.add_argument("params", nargs="?", default="{}")
+    _add_command_connection_args(rpc_parser)
 
     args = parser.parse_args(argv)
+    _normalize_connection_args(parser, args)
 
     try:
         if args.command == "init":
@@ -546,7 +592,7 @@ def _launch(args: argparse.Namespace) -> int:
         stdout=None,
     )
     godot.start()
-    print(f"Godot Playwright ready on http://{args.host}:{args.port}")
+    print(f"Godot Playwright ready on http://{godot.host}:{godot.port}")
     try:
         while godot.process is not None and godot.process.poll() is None:
             time.sleep(0.2)
@@ -667,6 +713,8 @@ def _format_export_report(report: dict[str, Any]) -> str:
             line = diagnostic.get("line")
             location = f" ({diagnostic.get('path')}:{line})" if line is not None else f" ({diagnostic.get('path')})"
         lines.append(f"  {diagnostic.get('kind')}: {diagnostic.get('message')}{location}")
+        if diagnostic.get("hint"):
+            lines.append(f"    hint: {diagnostic.get('hint')}")
     if not report.get("diagnostics") and not report.get("output_exists") and report.get("stdout_tail"):
         lines.append("  tail:")
         for line in report.get("stdout_tail", [])[-8:]:
@@ -687,6 +735,8 @@ def _format_script_check_report(report: dict[str, Any]) -> str:
         if diagnostic.get("path"):
             location = f" ({diagnostic.get('path')}:{diagnostic.get('line', '')})"
         lines.append(f"  {diagnostic.get('kind')}: {diagnostic.get('message')}{location}")
+        if diagnostic.get("hint"):
+            lines.append(f"    hint: {diagnostic.get('hint')}")
     if not report.get("diagnostics") and report.get("stdout_tail") and not report.get("ok"):
         lines.append("  tail:")
         for line in report.get("stdout_tail", [])[-8:]:
@@ -755,6 +805,8 @@ def _format_project_script_check_report(report: dict[str, Any]) -> str:
         lines.append(
             f"  {diagnostic.get('script')}: {diagnostic.get('kind')}: {diagnostic.get('message')}{location}"
         )
+        if diagnostic.get("hint"):
+            lines.append(f"    hint: {diagnostic.get('hint')}")
     return "\n".join(lines)
 
 

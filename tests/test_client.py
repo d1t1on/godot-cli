@@ -5361,6 +5361,32 @@ class FakeGodotServer(HTTPServer):
 
 
 class GodotLaunchTests(unittest.TestCase):
+    def test_launch_uses_isolated_user_dirs_and_strict_explicit_ports(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "project"
+            project.mkdir()
+            (project / "project.godot").write_text("config_version=5\n", encoding="utf-8")
+            process = mock.Mock()
+            process.stdout = None
+            process.poll.return_value = None
+
+            with (
+                mock.patch("godot_playwright.client.install_addon"),
+                mock.patch("godot_playwright.client.subprocess.Popen", return_value=process) as popen,
+                mock.patch.object(GodotClient, "wait_for_ready", return_value=None),
+            ):
+                godot = Godot(project, executable="godot-test", port=12345, capture_logs=False)
+                godot.start()
+                try:
+                    env = popen.call_args.kwargs["env"]
+                    self.assertEqual(env["GODOT_PLAYWRIGHT_PORT"], "12345")
+                    self.assertEqual(env["GODOT_PLAYWRIGHT_STRICT_PORT"], "1")
+                    self.assertIn("GODOT_PLAYWRIGHT_RUNTIME_DIR", env)
+                    self.assertTrue(Path(env["XDG_DATA_HOME"]).is_dir())
+                    self.assertTrue(Path(env["XDG_RUNTIME_DIR"]).is_dir())
+                finally:
+                    godot.close()
+
     def test_auto_port_launch_retries_with_a_new_port_when_server_never_becomes_ready(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp) / "project"

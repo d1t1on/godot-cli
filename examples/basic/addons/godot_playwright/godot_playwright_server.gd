@@ -5,6 +5,7 @@ var editor_interface = null
 var editor_plugin = null
 var bind_host := "127.0.0.1"
 var port := 9777
+var strict_port := false
 
 var _server := TCPServer.new()
 var _connections: Array = []
@@ -22,18 +23,26 @@ var _last_touch_positions := {}
 var _last_hovered_control = null
 var _last_hovered_collision_3d: CollisionObject3D = null
 var _editor_filesystem_selected_path := ""
+var _frame_step_active := false
+var _frame_step_pause_pending := false
+var _frame_step_counter := "process_frames"
+var _frame_step_target := 0
 
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	_started_ms = Time.get_ticks_msec()
 	var env_host := OS.get_environment("GODOT_PLAYWRIGHT_HOST")
 	var env_port := OS.get_environment("GODOT_PLAYWRIGHT_PORT")
+	var env_strict_port := OS.get_environment("GODOT_PLAYWRIGHT_STRICT_PORT")
 	if env_host != "":
 		bind_host = env_host
 	if env_port.is_valid_int():
 		port = int(env_port)
+	strict_port = env_strict_port in ["1", "true", "TRUE", "yes", "YES", "on", "ON"]
 	start()
 	set_process(true)
+	set_physics_process(true)
 
 
 func start() -> bool:
@@ -41,6 +50,15 @@ func start() -> bool:
 		return true
 	var error := _server.listen(port, bind_host)
 	if error != OK:
+		var requested_port := port
+		if not strict_port and requested_port != 0:
+			var fallback_error := _server.listen(0, bind_host)
+			if fallback_error == OK:
+				port = _server.get_local_port()
+				_last_error = "Failed to listen on %s:%s: %s; fell back to %s:%s" % [bind_host, requested_port, error, bind_host, port]
+				push_warning(_last_error)
+				print("Godot Playwright listening on http://%s:%s" % [bind_host, port])
+				return true
 		_last_error = "Failed to listen on %s:%s: %s" % [bind_host, port, error]
 		push_error(_last_error)
 		return false
@@ -61,6 +79,7 @@ func shutdown() -> void:
 
 
 func _process(_delta: float) -> void:
+	_update_runtime_frame_step()
 	if not _server.is_listening():
 		return
 	while _server.is_connection_available():
@@ -107,6 +126,10 @@ func _poll_connection(connection: Dictionary) -> bool:
 		peer.disconnect_from_host()
 		return true
 	return false
+
+
+func _physics_process(_delta: float) -> void:
+	_update_runtime_frame_step()
 
 
 func _request_is_complete(buffer: PackedByteArray) -> bool:
@@ -221,6 +244,14 @@ func _dispatch(method: String, params: Dictionary) -> Dictionary:
 			return _ok(_engine_info())
 		"runtime.clock":
 			return _ok(_runtime_clock())
+		"runtime.pause":
+			return _rpc_runtime_pause()
+		"runtime.resume":
+			return _rpc_runtime_resume()
+		"runtime.step_frames":
+			return _rpc_runtime_step_frames(params)
+		"runtime.sample_frames":
+			return _rpc_runtime_sample_frames(params)
 		"runtime.evaluate":
 			return _rpc_runtime_evaluate(params)
 		"tree.snapshot":
@@ -544,6 +575,7 @@ func _health_payload() -> Dictionary:
 		"server": "godot-playwright",
 		"version": "0.1.0",
 		"port": port,
+		"strict_port": strict_port,
 		"editor": Engine.is_editor_hint(),
 		"godot": Engine.get_version_info(),
 		"uptime_ms": Time.get_ticks_msec() - _started_ms,
@@ -573,6 +605,7 @@ func _rpc_protocol_describe(params: Dictionary) -> Dictionary:
 		"godot": Engine.get_version_info(),
 		"project_path": ProjectSettings.globalize_path("res://"),
 		"server_port": port,
+		"strict_port": strict_port,
 		"uptime_ms": Time.get_ticks_msec() - _started_ms,
 		"method_count": methods.size(),
 		"domain_count": domains.size(),
@@ -599,6 +632,10 @@ func _protocol_method_names() -> Array:
 		"protocol.describe",
 		"engine.info",
 		"runtime.clock",
+		"runtime.pause",
+		"runtime.resume",
+		"runtime.step_frames",
+		"runtime.sample_frames",
 		"runtime.evaluate",
 		"tree.snapshot",
 		"node.find",
@@ -776,6 +813,10 @@ func _protocol_method_domain(method: String) -> String:
 func _protocol_python_helper(method: String) -> String:
 	var aliases := {
 		"runtime.clock": "clock",
+		"runtime.pause": "pause",
+		"runtime.resume": "resume",
+		"runtime.step_frames": "step_frames",
+		"runtime.sample_frames": "sample_frames",
 		"runtime.evaluate": "evaluate",
 		"tree.snapshot": "snapshot",
 		"scene.current": "current_scene",
@@ -828,6 +869,7 @@ func _protocol_features() -> Array:
 		"locator_queries",
 		"locator_actions",
 		"input_synthesis",
+		"runtime_frame_control",
 		"viewport_screenshot",
 		"physics_queries",
 		"animation_control",
@@ -881,7 +923,154 @@ func _runtime_clock() -> Dictionary:
 		"drawn_frames": Engine.get_frames_drawn(),
 		"physics_ticks_per_second": Engine.physics_ticks_per_second,
 		"time_scale": Engine.time_scale,
+		"paused": get_tree().paused,
+		"step_active": _frame_step_active,
+		"step_counter": _frame_step_counter,
+		"step_target": _frame_step_target,
 	}
+
+
+func _rpc_runtime_pause() -> Dictionary:
+	_frame_step_active = false
+	_frame_step_pause_pending = false
+	get_tree().paused = true
+	_record_event("runtime.pause", _runtime_clock())
+	return _ok(_runtime_clock())
+
+
+func _rpc_runtime_resume() -> Dictionary:
+	_frame_step_active = false
+	_frame_step_pause_pending = false
+	get_tree().paused = false
+	_record_event("runtime.resume", _runtime_clock())
+	return _ok(_runtime_clock())
+
+
+func _rpc_runtime_step_frames(params: Dictionary) -> Dictionary:
+	var frames := max(0, int(params.get("frames", 1)))
+	var physics := bool(params.get("physics", false))
+	_frame_step_counter = "physics_frames" if physics else "process_frames"
+	var start_frame := _runtime_step_counter_value()
+	_frame_step_target = start_frame + frames
+	if frames == 0:
+		_frame_step_active = false
+		_frame_step_pause_pending = false
+		get_tree().paused = true
+	else:
+		_frame_step_active = true
+		_frame_step_pause_pending = false
+		get_tree().paused = false
+	var result := _runtime_clock()
+	result["start_frame"] = start_frame
+	result["target_frame"] = _frame_step_target
+	result["frames"] = frames
+	result["physics"] = physics
+	_record_event("runtime.step_frames", {
+		"frames": frames,
+		"physics": physics,
+		"start_frame": start_frame,
+		"target_frame": _frame_step_target,
+	})
+	return _ok(result)
+
+
+func _rpc_runtime_sample_frames(params: Dictionary) -> Dictionary:
+	var sample := _runtime_frame_sample(params)
+	_record_event("runtime.sample_frames", {
+		"sample_count": 1,
+		"selector_count": sample.get("selector_count", 0),
+		"expression_count": sample.get("expression_count", 0),
+	})
+	return _ok({
+		"samples": [sample],
+		"count": 1,
+		"requested_frames": max(1, int(params.get("frames", 1))),
+	})
+
+
+func _update_runtime_frame_step() -> void:
+	if not _frame_step_active or _frame_step_pause_pending:
+		return
+	if _runtime_step_counter_value() < _frame_step_target:
+		return
+	_frame_step_pause_pending = true
+	call_deferred("_finish_runtime_frame_step")
+
+
+func _finish_runtime_frame_step() -> void:
+	get_tree().paused = true
+	_frame_step_active = false
+	_frame_step_pause_pending = false
+
+
+func _runtime_step_counter_value() -> int:
+	if _frame_step_counter == "physics_frames":
+		return Engine.get_physics_frames()
+	return Engine.get_process_frames()
+
+
+func _runtime_frame_sample(params: Dictionary) -> Dictionary:
+	var root_spec = params.get("root", "edited")
+	var sample := {
+		"clock": _runtime_clock(),
+		"selectors": [],
+		"selector_count": 0,
+		"expressions": [],
+		"expression_count": 0,
+	}
+	if bool(params.get("include_snapshot", false)):
+		var root := _resolve_root(root_spec)
+		if root != null:
+			sample["snapshot"] = _snapshot_node(root, 0, int(params.get("max_depth", 8)), bool(params.get("include_properties", false)))
+	var selectors = params.get("selectors", [])
+	if typeof(selectors) != TYPE_ARRAY:
+		selectors = [selectors]
+	for selector in selectors:
+		var node := _resolve_node(selector, root_spec)
+		var entry := {"selector": selector, "found": node != null}
+		if node != null:
+			entry["state"] = _node_state(node)
+			entry["bounds"] = _node_bounds(node)
+		sample["selectors"].append(entry)
+	sample["selector_count"] = sample["selectors"].size()
+	var expressions = params.get("expressions", [])
+	if typeof(expressions) != TYPE_ARRAY:
+		expressions = [expressions]
+	for expression in expressions:
+		if typeof(expression) == TYPE_STRING:
+			var expression_text := String(expression)
+			var params_for_expression := {"variables": {}, "root": root_spec}
+			sample["expressions"].append({
+				"expression": expression_text,
+				"result": _runtime_sample_expression(expression_text, params_for_expression),
+			})
+		elif typeof(expression) == TYPE_DICTIONARY:
+			var expression_text := String(expression.get("expression", expression.get("name", "")))
+			var params_for_expression := {
+				"variables": expression.get("variables", {}),
+				"root": expression.get("root", root_spec),
+				"show_error": expression.get("show_error", false),
+				"const_calls_only": expression.get("const_calls_only", false),
+			}
+			sample["expressions"].append({
+				"name": expression.get("name", expression_text),
+				"expression": expression_text,
+				"result": _runtime_sample_expression(expression_text, params_for_expression),
+			})
+	sample["expression_count"] = sample["expressions"].size()
+	return sample
+
+
+func _runtime_sample_expression(expression_text: String, params: Dictionary) -> Dictionary:
+	if expression_text == "":
+		return {"ok": false, "message": "expression is required"}
+	var root := _resolve_root(params.get("root", "edited"))
+	if root == null:
+		return {"ok": false, "message": "Evaluation root not found"}
+	var inputs := _expression_inputs(params, root, null, null)
+	if not inputs.get("ok", false):
+		return inputs
+	return _execute_expression(expression_text, inputs["names"], inputs["values"], root, params)
 
 
 func _rpc_tree_snapshot(params: Dictionary) -> Dictionary:

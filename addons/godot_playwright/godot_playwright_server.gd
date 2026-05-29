@@ -5,6 +5,7 @@ var editor_interface = null
 var editor_plugin = null
 var bind_host := "127.0.0.1"
 var port := 9777
+var strict_port := false
 
 var _server := TCPServer.new()
 var _connections: Array = []
@@ -33,10 +34,12 @@ func _ready() -> void:
 	_started_ms = Time.get_ticks_msec()
 	var env_host := OS.get_environment("GODOT_PLAYWRIGHT_HOST")
 	var env_port := OS.get_environment("GODOT_PLAYWRIGHT_PORT")
+	var env_strict_port := OS.get_environment("GODOT_PLAYWRIGHT_STRICT_PORT")
 	if env_host != "":
 		bind_host = env_host
 	if env_port.is_valid_int():
 		port = int(env_port)
+	strict_port = env_strict_port in ["1", "true", "TRUE", "yes", "YES", "on", "ON"]
 	start()
 	set_process(true)
 	set_physics_process(true)
@@ -47,6 +50,15 @@ func start() -> bool:
 		return true
 	var error := _server.listen(port, bind_host)
 	if error != OK:
+		var requested_port := port
+		if not strict_port and requested_port != 0:
+			var fallback_error := _server.listen(0, bind_host)
+			if fallback_error == OK:
+				port = _server.get_local_port()
+				_last_error = "Failed to listen on %s:%s: %s; fell back to %s:%s" % [bind_host, requested_port, error, bind_host, port]
+				push_warning(_last_error)
+				print("Godot Playwright listening on http://%s:%s" % [bind_host, port])
+				return true
 		_last_error = "Failed to listen on %s:%s: %s" % [bind_host, port, error]
 		push_error(_last_error)
 		return false
@@ -563,6 +575,7 @@ func _health_payload() -> Dictionary:
 		"server": "godot-playwright",
 		"version": "0.1.0",
 		"port": port,
+		"strict_port": strict_port,
 		"editor": Engine.is_editor_hint(),
 		"godot": Engine.get_version_info(),
 		"uptime_ms": Time.get_ticks_msec() - _started_ms,
@@ -592,6 +605,7 @@ func _rpc_protocol_describe(params: Dictionary) -> Dictionary:
 		"godot": Engine.get_version_info(),
 		"project_path": ProjectSettings.globalize_path("res://"),
 		"server_port": port,
+		"strict_port": strict_port,
 		"uptime_ms": Time.get_ticks_msec() - _started_ms,
 		"method_count": methods.size(),
 		"domain_count": domains.size(),

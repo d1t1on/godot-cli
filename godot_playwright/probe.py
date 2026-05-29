@@ -62,7 +62,7 @@ def probe_project(
             text=True,
             timeout=timeout,
             check=False,
-            env=isolated_godot_env(),
+            env=isolated_godot_env(base_dir=artifacts / "runtime", namespace=f"probe-{_safe_name(scene or 'main')}"),
         )
         timed_out = False
         exit_code = int(completed.returncode)

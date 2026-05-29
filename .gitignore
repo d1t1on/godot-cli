@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+
+.venv/
+
+godot-playwright-report*/
+.godot/
+*.uid
+
+build/
+dist/
+*.egg-info/

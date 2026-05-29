@@ -71,7 +71,7 @@ def export_project(
             text=True,
             timeout=timeout,
             check=False,
-            env=isolated_godot_env(),
+            env=isolated_godot_env(base_dir=log.parent / "runtime", namespace=f"export-{preset}-{mode}"),
         )
         timed_out = False
         exit_code = int(completed.returncode)

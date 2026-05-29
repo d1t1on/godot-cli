@@ -141,6 +141,31 @@ class ScriptCheckUnitTests(unittest.TestCase):
             self.assertEqual(report["diagnostics"][0]["path"], "res://scripts/broken.gd")
             self.assertEqual(report["diagnostics"][0]["line"], 4)
 
+    def test_check_script_adds_gdscript_type_hints_to_diagnostics(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "project"
+            project.mkdir()
+            (project / "project.godot").write_text("config_version=5\n", encoding="utf-8")
+
+            output = textwrap.dedent(
+                """\
+                WARNING: The variable type is being inferred from a Variant value.
+                          at: GDScript::reload (res://scripts/agent.gd:7)
+                SCRIPT ERROR: Parse Error: Could not find type "CardDefinition" in the current scope.
+                          at: GDScript::reload (res://scripts/agent.gd:12)
+                """
+            )
+
+            def fake_run(cmd, **kwargs):
+                return subprocess.CompletedProcess(cmd, 1, stdout=output)
+
+            with mock.patch("godot_playwright.checks.subprocess.run", side_effect=fake_run):
+                report = check_script(project, "res://scripts/agent.gd", ensure_import_cache=False)
+
+            self.assertFalse(report["ok"])
+            self.assertIn("explicit", report["diagnostics"][0]["hint"])
+            self.assertIn("import cache", report["diagnostics"][1]["hint"])
+
     def test_cli_check_script_invokes_runner(self) -> None:
         report = {
             "ok": True,

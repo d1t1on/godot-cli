@@ -139,6 +139,9 @@ godot-playwright check-scripts /tmp/agent-game res://scripts --exclude "addons/*
 Script checks run `godot --import` first by default so Godot can build the
 global `class_name` cache before `--check-only` parses scripts. Use
 `--no-import-cache` only when you explicitly need the older direct parser path.
+Godot subprocesses launched by checks, probes, and exports also use an isolated
+loopback port and XDG user-data directory, so parallel audits do not fight over
+the runtime autoload port or `user://logs`.
 
 Runner tests can use the same parser as an assertion fixture:
 
@@ -1106,16 +1109,20 @@ godot-playwright install /path/to/project --autoload
 Launch a headless editor session and keep it running:
 
 ```sh
-godot-playwright launch /path/to/project --mode editor --port 9777
+godot-playwright launch /path/to/project --mode editor --port auto
 ```
 
 In another shell:
 
 ```sh
-godot-playwright health --port 9777
-godot-playwright snapshot --port 9777
-godot-playwright rpc engine.info --port 9777
+godot-playwright health --port <printed-port>
+godot-playwright snapshot --port <printed-port>
+godot-playwright rpc engine.info --port <printed-port>
 ```
+
+`launch` and `smoke` allocate a free port by default. Pass an explicit port only
+when another process needs to attach to that known endpoint; `--port` works both
+before and after the subcommand.
 
 ## Python API
 
@@ -1240,10 +1247,12 @@ multi-selection surfaced as a list of strings.
 
 ## Protocol
 
-The add-on listens on `127.0.0.1:9777` by default. Override this with:
+The add-on listens on `127.0.0.1:9777` by default, and falls back to an available
+port when that default is already occupied. Override this with:
 
 - `GODOT_PLAYWRIGHT_HOST`
 - `GODOT_PLAYWRIGHT_PORT`
+- `GODOT_PLAYWRIGHT_STRICT_PORT=1` to fail instead of falling back
 
 See [docs/protocol.md](docs/protocol.md) for the current RPC surface.
 

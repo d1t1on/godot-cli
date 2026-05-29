@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .install import install_addon
+from .process import isolated_godot_env
 
 MOUSE_BUTTON_LEFT = 1
 MOUSE_BUTTON_RIGHT = 2
@@ -8208,9 +8209,12 @@ class Godot:
         raise last_error
 
     def _start_once(self) -> GodotClient:
-        env = os.environ.copy()
-        env["GODOT_PLAYWRIGHT_HOST"] = self.host
-        env["GODOT_PLAYWRIGHT_PORT"] = str(self.port)
+        env = isolated_godot_env(
+            host=self.host,
+            port=self.port,
+            strict_port=self._explicit_port,
+            namespace=f"live-{self.mode}",
+        )
 
         cmd = [self.executable, "--path", str(self.project_path)]
         if self.headless:

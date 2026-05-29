@@ -73,8 +73,9 @@ Godot process.
   and that `godot_playwright.install.bundled_addon_path()` resolves inside the
   installed package.
 - `Failed to listen on 127.0.0.1:9777`: another Godot Playwright server is
-  already running. Stop the other Godot process or set a different
-  `GODOT_PLAYWRIGHT_PORT` for manual Godot launches.
+  already running and strict port mode was requested. Stop the other Godot
+  process, use `--port auto`, or set a different `GODOT_PLAYWRIGHT_PORT` for
+  manual Godot launches.
 - Runtime probe reports Godot log errors: inspect the per-scene `*-probe.log`
   in the artifacts directory; validation reports surface the scene path and log
   path for each diagnostic.

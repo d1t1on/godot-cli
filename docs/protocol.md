@@ -5,6 +5,9 @@ Godot Playwright uses local HTTP JSON-RPC over loopback.
 - Health endpoint: `GET /health`
 - RPC endpoint: `POST /rpc`
 - Default bind: `127.0.0.1:9777`
+- Non-strict add-on launches fall back to an available port if the requested
+  port is busy. Python/CLI launches use strict explicit ports and auto-allocated
+  default ports for live sessions.
 
 RPC requests:
 

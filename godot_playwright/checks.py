@@ -258,7 +258,7 @@ def check_script(
             text=True,
             timeout=timeout,
             check=False,
-            env=isolated_godot_env(),
+            env=isolated_godot_env(base_dir=artifacts / "runtime", namespace=f"check-{_safe_name(str(script_path))}"),
         )
         timed_out = False
         exit_code = int(completed.returncode)
@@ -570,7 +570,7 @@ def ensure_project_import_cache(
             text=True,
             timeout=timeout,
             check=False,
-            env=isolated_godot_env(),
+            env=isolated_godot_env(base_dir=artifacts / "runtime", namespace=f"import-{_safe_name(log_name)}"),
         )
         timed_out = False
         exit_code = int(completed.returncode)
@@ -929,13 +929,14 @@ def _parse_godot_diagnostics(output: str) -> list[dict[str, Any]]:
     diagnostics: list[dict[str, Any]] = []
     current: dict[str, Any] | None = None
     for line in output.splitlines():
-        match = re.match(r"^(SCRIPT ERROR|ERROR|WARNING):\s*(.*)$", line.strip())
+        match = re.match(r"^(SCRIPT ERROR|USER ERROR|USER WARNING|ERROR|WARNING):\s*(.*)$", line.strip())
         if match:
             current = {
-                "severity": "warning" if match.group(1) == "WARNING" else "error",
+                "severity": "warning" if "WARNING" in match.group(1) else "error",
                 "kind": match.group(1),
                 "message": match.group(2),
             }
+            _add_gdscript_diagnostic_hint(current)
             diagnostics.append(current)
             continue
         location = re.match(r"^(?:at:|At:)\s*(.*?)\s*(?:\((.*?)(?::(\d+))?\))?$", line.strip())
@@ -949,6 +950,23 @@ def _parse_godot_diagnostics(output: str) -> list[dict[str, Any]]:
             if line_number is not None:
                 current["line"] = int(line_number)
     return diagnostics
+
+
+def _add_gdscript_diagnostic_hint(diagnostic: dict[str, Any]) -> None:
+    message = str(diagnostic.get("message", ""))
+    lower = message.lower()
+    if "could not find type" in lower or ("identifier" in lower and "not declared" in lower):
+        diagnostic["hint"] = (
+            "If this is a class_name dependency, run check-script/check-scripts with the default import cache warmup "
+            "before changing code structure."
+        )
+    elif "cannot infer the type" in lower or (
+        "variant" in lower and "warning" in str(diagnostic.get("kind", "")).lower()
+    ):
+        diagnostic["hint"] = (
+            "Add an explicit local variable, loop variable, parameter, or return type; Godot treats some Variant "
+            "inference warnings as check failures."
+        )
 
 
 def _tail(text: str, *, max_lines: int = 80) -> list[str]:
