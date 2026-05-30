@@ -774,7 +774,7 @@ def _fake_protocol_description(server: Any, params: dict[str, Any]) -> dict[str,
         domains.append({"name": name, "count": len(methods), "methods": methods})
     result: dict[str, Any] = {
         "server": "godot-playwright",
-        "version": "0.1.0",
+        "version": "0.1.1",
         "transport": {"http": True, "jsonrpc": "2.0", "health": "/health", "rpc": "/rpc"},
         "editor": True,
         "godot": {"major": 4, "minor": 6, "patch": 2, "status": "stable", "string": "4.6.2.stable.fake"},

@@ -573,7 +573,7 @@ func _health_payload() -> Dictionary:
 	return {
 		"ok": true,
 		"server": "godot-playwright",
-		"version": "0.1.0",
+		"version": "0.1.1",
 		"port": port,
 		"strict_port": strict_port,
 		"editor": Engine.is_editor_hint(),
@@ -594,7 +594,7 @@ func _rpc_protocol_describe(params: Dictionary) -> Dictionary:
 	var include_features := bool(params.get("include_features", true))
 	var summary := {
 		"server": "godot-playwright",
-		"version": "0.1.0",
+		"version": "0.1.1",
 		"transport": {
 			"http": true,
 			"jsonrpc": "2.0",
