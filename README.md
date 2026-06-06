@@ -87,6 +87,53 @@ def test_editor_undo(godot, expect, expect_editor):
     expect(godot.locator("#StatusLabel")).to_exist()
 ```
 
+Generate a new Godot-native UI scene from a structured design spec and write a
+layout review report:
+
+```sh
+godot-playwright design-ui /tmp/agent-game ui_spec.json \
+  --scene res://scenes/ui/main_menu.tscn \
+  --viewport 1280x720 \
+  --viewport 800x450
+```
+
+The `design-ui` command maps Figma-like tokens, components, variants, and
+constraints onto Godot `Control` nodes, containers, theme overrides, metadata,
+and groups. It saves the generated scene, captures per-viewport screenshots when
+available, and writes `design-report.json` plus `design-report.html` with
+layout issues such as overlaps, out-of-viewport controls, undersized touch
+targets, text overflow, and missing referenced `res://` assets.
+
+Minimal spec:
+
+```json
+{
+  "schema_version": 1,
+  "name": "MainMenu",
+  "target": {"scene": "res://scenes/ui/main_menu.tscn"},
+  "tokens": {
+    "colors": {"surface": "#141418", "text": "#f7f7fb", "primary": "#ffcc00"},
+    "spacing": {"md": 12, "lg": 24},
+    "font_sizes": {"title": 32, "body": 16}
+  },
+  "components": {
+    "menu_button": {
+      "base": {"type": "button", "size": [220, 52], "style": {"font_color": "$colors.text"}},
+      "variants": {"primary": {"style": {"font_color": "$colors.primary"}}}
+    }
+  },
+  "root": {
+    "type": "screen",
+    "id": "main_menu",
+    "style": {"background": "$colors.surface"},
+    "children": [
+      {"type": "text", "id": "title", "text": "Start", "font_size": "$font_sizes.title"},
+      {"type": "instance", "component": "menu_button", "variant": "primary", "id": "play", "text": "Play"}
+    ]
+  }
+}
+```
+
 Probe runtime startup for script errors and warning/error log diagnostics:
 
 ```sh

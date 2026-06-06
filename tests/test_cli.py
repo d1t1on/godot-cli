@@ -50,6 +50,44 @@ class CliConnectionTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(godot_type.call_args.kwargs["port"], 34567)
 
+    def test_design_ui_forwards_generation_options(self) -> None:
+        stdout = StringIO()
+        report = {
+            "ok": True,
+            "target_scene": "res://scenes/ui/menu.tscn",
+            "node_count": 3,
+            "report_html": "/tmp/report.html",
+            "issues": [],
+        }
+        with mock.patch("godot_playwright.cli.generate_design_ui", return_value=report) as design_ui:
+            with redirect_stdout(stdout):
+                code = cli_main(
+                    [
+                        "design-ui",
+                        "/tmp/project",
+                        "/tmp/spec.json",
+                        "--scene",
+                        "res://scenes/ui/menu.tscn",
+                        "--viewport",
+                        "900x600",
+                        "--viewport",
+                        "800x450",
+                        "--dry-run",
+                        "--no-screenshots",
+                        "--force",
+                    ]
+                )
+
+        self.assertEqual(code, 0)
+        self.assertIn("Design UI PASS", stdout.getvalue())
+        design_ui.assert_called_once()
+        self.assertEqual(design_ui.call_args.args[:2], ("/tmp/project", "/tmp/spec.json"))
+        self.assertEqual(design_ui.call_args.kwargs["scene"], "res://scenes/ui/menu.tscn")
+        self.assertEqual(design_ui.call_args.kwargs["viewports"], [(900, 600), (800, 450)])
+        self.assertTrue(design_ui.call_args.kwargs["dry_run"])
+        self.assertTrue(design_ui.call_args.kwargs["no_screenshots"])
+        self.assertTrue(design_ui.call_args.kwargs["force"])
+
 
 if __name__ == "__main__":
     unittest.main()

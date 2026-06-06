@@ -63,6 +63,15 @@ from .checks import (
     expect_script_file,
 )
 from .codegen import TraceCodegenError, generate_test_from_trace, load_trace_events, normalize_trace_events
+from .design_ui import (
+    DesignUIError,
+    DesignUISpecError,
+    compile_design_spec,
+    format_design_ui_report,
+    generate_design_ui,
+    load_design_spec,
+    review_compiled_design,
+)
 from .probe import ProbeError, probe_project, probe_project_scenes
 from .runner import (
     TestTimeoutError,
@@ -121,6 +130,8 @@ __all__ = [
     "ScriptFileExpect",
     "ScriptCheckError",
     "TraceCodegenError",
+    "DesignUIError",
+    "DesignUISpecError",
     "ProbeError",
     "SceneInspectError",
     "ProjectValidationError",
@@ -168,6 +179,11 @@ __all__ = [
     "generate_test_from_trace",
     "load_trace_events",
     "normalize_trace_events",
+    "compile_design_spec",
+    "format_design_ui_report",
+    "generate_design_ui",
+    "load_design_spec",
+    "review_compiled_design",
     "init_project",
     "inspect_project",
     "inspect_export_presets",

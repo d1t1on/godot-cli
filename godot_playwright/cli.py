@@ -17,6 +17,7 @@ from .checks import (
 )
 from .codegen import TraceCodegenError, generate_test_from_trace, load_trace_events
 from .client import Godot, GodotClient, GodotPlaywrightError
+from .design_ui import DesignUIError, DesignUISpecError, format_design_ui_report, generate_design_ui
 from .export import ExportError, export_project
 from .install import install_addon
 from .inventory import ProjectInventoryError, inspect_project
@@ -68,6 +69,21 @@ def _normalize_connection_args(parser: argparse.ArgumentParser, args: argparse.N
         args.port = int(raw_port)
 
 
+def _parse_viewport_size(value: str) -> tuple[int, int]:
+    raw = str(value).strip().lower().replace(" ", "")
+    if "x" not in raw:
+        raise argparse.ArgumentTypeError("viewport size must be formatted WIDTHxHEIGHT")
+    width_text, height_text = raw.split("x", 1)
+    try:
+        width = int(width_text)
+        height = int(height_text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("viewport width and height must be integers") from exc
+    if width <= 0 or height <= 0:
+        raise argparse.ArgumentTypeError("viewport width and height must be positive")
+    return width, height
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="godot-playwright")
     parser.add_argument("--host", default=None)
@@ -110,6 +126,29 @@ def main(argv: list[str] | None = None) -> int:
     smoke_parser.add_argument("--no-headless", action="store_true")
     smoke_parser.add_argument("--save-path", default="res://scenes/godot_playwright_smoke.tscn")
     _add_command_connection_args(smoke_parser, allow_auto=True)
+
+    design_ui_parser = subparsers.add_parser(
+        "design-ui",
+        help="Generate a Godot Control UI scene from a structured design spec and write a review report.",
+    )
+    design_ui_parser.add_argument("project")
+    design_ui_parser.add_argument("spec", help="JSON design UI spec.")
+    design_ui_parser.add_argument("--scene", default="", help="Override the target res:// scene path.")
+    design_ui_parser.add_argument(
+        "--viewport",
+        action="append",
+        type=_parse_viewport_size,
+        default=[],
+        help="Review viewport formatted WIDTHxHEIGHT. Can be passed more than once.",
+    )
+    design_ui_parser.add_argument("--godot", default="godot")
+    design_ui_parser.add_argument("--timeout", type=float, default=20.0)
+    design_ui_parser.add_argument("--artifacts-dir", default="godot-playwright-report/design-ui")
+    design_ui_parser.add_argument("--max-nodes", type=int, default=100)
+    design_ui_parser.add_argument("--dry-run", action="store_true", help="Compile the design spec without launching Godot.")
+    design_ui_parser.add_argument("--no-screenshots", action="store_true", help="Skip viewport screenshots during review.")
+    design_ui_parser.add_argument("--force", action="store_true", help="Overwrite the target scene if it already exists.")
+    design_ui_parser.add_argument("--json", action="store_true", help="Print the full JSON design report.")
 
     probe_parser = subparsers.add_parser("probe", help="Launch a runtime scene briefly and report Godot log errors.")
     probe_parser.add_argument("project")
@@ -313,6 +352,26 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "smoke":
             _print_json(_smoke(args))
             return 0
+
+        if args.command == "design-ui":
+            report = generate_design_ui(
+                args.project,
+                args.spec,
+                scene=args.scene or None,
+                viewports=args.viewport or None,
+                artifacts_dir=args.artifacts_dir,
+                executable=args.godot,
+                timeout=args.timeout,
+                max_nodes=args.max_nodes,
+                dry_run=args.dry_run,
+                no_screenshots=args.no_screenshots,
+                force=args.force,
+            )
+            if args.json:
+                _print_json(report)
+            else:
+                print(format_design_ui_report(report))
+            return 0 if report["ok"] else 1
 
         if args.command == "probe":
             report = probe_project(
@@ -571,6 +630,8 @@ def main(argv: list[str] | None = None) -> int:
         ProjectInventoryError,
         ProjectNodeQueryError,
         TraceCodegenError,
+        DesignUISpecError,
+        DesignUIError,
     ) as exc:
         print(f"godot-playwright: {exc}", file=sys.stderr)
         return 1
