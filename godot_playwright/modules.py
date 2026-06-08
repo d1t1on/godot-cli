@@ -377,20 +377,27 @@ def _check_autoload_conflicts(
     *,
     force: bool,
 ) -> None:
-    if force:
-        return
     for autoload in autoloads:
-        if _has_autoload(project_text, autoload["name"]):
+        existing_path = _autoload_path(project_text, autoload["name"])
+        if existing_path is None:
+            continue
+        expected_path = f"*{autoload['path']}"
+        if existing_path != expected_path:
+            raise ModuleError(f"Autoload already exists: {autoload['name']}")
+        if not force:
             raise ModuleError(f"Autoload already exists: {autoload['name']}")
 
 
-def _has_autoload(project_text: str, name: str) -> bool:
+def _autoload_path(project_text: str, name: str) -> str | None:
     section = _find_section(project_text, "autoload")
     if section is None:
-        return False
+        return None
     start, end = section
     body = project_text[start:end]
-    return bool(re.search(rf"(?m)^\s*{re.escape(name)}\s*=", body))
+    match = re.search(rf"(?m)^\s*{re.escape(name)}\s*=\s*\"([^\"]*)\"", body)
+    if match is None:
+        return None
+    return match.group(1)
 
 
 def _find_section(text: str, name: str) -> tuple[int, int] | None:

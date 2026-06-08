@@ -149,7 +149,7 @@ class ModuleInstallerUnitTests(unittest.TestCase):
             with self.assertRaisesRegex(ModuleError, "Autoload already exists"):
                 add_module(project, "save_load", module_root=module_root)
 
-    def test_add_module_force_overwrites_module_path_and_autoload(self) -> None:
+    def test_add_module_force_overwrites_module_path_and_module_autoload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             project = _write_project(root / "project")
@@ -161,7 +161,7 @@ class ModuleInstallerUnitTests(unittest.TestCase):
             project_file = project / "project.godot"
             project_file.write_text(
                 project_file.read_text(encoding="utf-8")
-                + '\n[autoload]\n\nSaveService="*res://scripts/other_save_service.gd"\n',
+                + '\n[autoload]\n\nSaveService="*res://addons/save_load/save_service.gd"\n',
                 encoding="utf-8",
             )
 
@@ -174,6 +174,34 @@ class ModuleInstallerUnitTests(unittest.TestCase):
             )
             self.assertIn(
                 'SaveService="*res://addons/save_load/save_service.gd"',
+                project_file.read_text(encoding="utf-8"),
+            )
+
+    def test_add_module_force_rejects_unrelated_autoload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = _write_project(root / "project")
+            module_root = root / "modules"
+            _write_module_fixture(module_root)
+            target_dir = project / "addons" / "save_load"
+            target_dir.mkdir(parents=True)
+            (target_dir / "save_service.gd").write_text("extends Node\n# stale\n", encoding="utf-8")
+            unrelated_service = project / "scripts" / "other_save_service.gd"
+            unrelated_service.parent.mkdir(parents=True)
+            unrelated_service.write_text("extends Node\n", encoding="utf-8")
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8")
+                + '\n[autoload]\n\nSaveService="*res://scripts/other_save_service.gd"\n',
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ModuleError, "Autoload already exists"):
+                add_module(project, "save_load", module_root=module_root, force=True)
+
+            self.assertTrue(unrelated_service.exists())
+            self.assertIn(
+                'SaveService="*res://scripts/other_save_service.gd"',
                 project_file.read_text(encoding="utf-8"),
             )
 
