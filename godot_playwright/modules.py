@@ -297,6 +297,7 @@ def _plan_copy_operations(
     copy_entries: list[dict[str, str]],
 ) -> list[_CopyOperation]:
     operations: list[_CopyOperation] = []
+    planned_targets: set[Path] = set()
     for entry in copy_entries:
         source = module_dir / entry["from"]
         target_root = project_dir / entry["to"]
@@ -308,26 +309,41 @@ def _plan_copy_operations(
                 relative = source_file.relative_to(source)
                 source_label = _join_posix(entry["from"], relative.as_posix())
                 target_relative = _join_posix(entry["to"], relative.as_posix())
-                operations.append(
+                _append_copy_operation(
+                    operations,
+                    planned_targets,
                     _CopyOperation(
                         source=source_file,
                         target=target_root / relative,
                         source_label=source_label,
                         target_res=_to_res_path(target_relative),
-                    )
+                    ),
                 )
         elif source.is_file():
-            operations.append(
+            _append_copy_operation(
+                operations,
+                planned_targets,
                 _CopyOperation(
                     source=source,
                     target=target_root,
                     source_label=entry["from"],
                     target_res=_to_res_path(entry["to"]),
-                )
+                ),
             )
         else:
             raise ModuleError(f"Module source is not a file or directory: {source}")
     return operations
+
+
+def _append_copy_operation(
+    operations: list[_CopyOperation],
+    planned_targets: set[Path],
+    operation: _CopyOperation,
+) -> None:
+    if operation.target in planned_targets:
+        raise ModuleError(f"Duplicate copy target: {operation.target_res}")
+    planned_targets.add(operation.target)
+    operations.append(operation)
 
 
 def _check_copy_conflicts(
@@ -340,6 +356,8 @@ def _check_copy_conflicts(
         parent_conflict = _first_non_directory_parent(operation.target, project_dir)
         if parent_conflict is not None:
             raise ModuleError(f"Target already exists and is not a directory: {parent_conflict}")
+        if operation.target.exists() and operation.target.is_dir():
+            raise ModuleError(f"Target is an existing directory: {operation.target}")
         if operation.target.exists() and not force:
             raise ModuleError(f"Target already exists: {operation.target}")
 
@@ -388,9 +406,7 @@ def _find_section(text: str, name: str) -> tuple[int, int] | None:
 def _copy_file(source: Path, target: Path, *, force: bool) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists() and target.is_dir():
-        if not force:
-            raise ModuleError(f"Target already exists: {target}")
-        shutil.rmtree(target)
+        raise ModuleError(f"Target is an existing directory: {target}")
     shutil.copy2(source, target)
 
 

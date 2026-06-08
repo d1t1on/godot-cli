@@ -109,6 +109,54 @@ class ModuleInstallerUnitTests(unittest.TestCase):
                 project_file.read_text(encoding="utf-8"),
             )
 
+    def test_add_module_force_rejects_file_targeting_existing_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = _write_project(root / "project")
+            module_root = root / "modules"
+            module_dir = _write_module_fixture(module_root)
+            (module_dir / "loose_save_service.gd").write_text("extends Node\n", encoding="utf-8")
+            manifest_path = module_dir / "module.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["copy"] = [{"from": "loose_save_service.gd", "to": "addons"}]
+            manifest["autoloads"] = []
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            addons_dir = project / "addons"
+            addons_dir.mkdir()
+            unrelated_file = addons_dir / "unrelated.gd"
+            unrelated_file.write_text("extends Node\n# keep\n", encoding="utf-8")
+
+            raised: ModuleError | None = None
+            try:
+                add_module(project, "save_load", module_root=module_root, force=True)
+            except ModuleError as exc:
+                raised = exc
+
+            self.assertTrue(unrelated_file.exists())
+            self.assertEqual(unrelated_file.read_text(encoding="utf-8"), "extends Node\n# keep\n")
+            self.assertIsNotNone(raised)
+            self.assertRegex(str(raised), "existing directory")
+
+    def test_add_module_rejects_duplicate_planned_targets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = _write_project(root / "project")
+            module_root = root / "modules"
+            module_dir = _write_module_fixture(module_root)
+            (module_dir / "first.gd").write_text("extends Node\n# first\n", encoding="utf-8")
+            (module_dir / "second.gd").write_text("extends Node\n# second\n", encoding="utf-8")
+            manifest_path = module_dir / "module.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["copy"] = [
+                {"from": "first.gd", "to": "addons/save_load/duplicate.gd"},
+                {"from": "second.gd", "to": "addons/save_load/duplicate.gd"},
+            ]
+            manifest["autoloads"] = []
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            with self.assertRaisesRegex(ModuleError, "Duplicate copy target"):
+                add_module(project, "save_load", module_root=module_root)
+
     def test_add_module_with_demo_copies_demo_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
