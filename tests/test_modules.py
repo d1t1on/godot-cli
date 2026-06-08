@@ -47,6 +47,7 @@ class ModuleInstallerUnitTests(unittest.TestCase):
 
     def test_pyproject_includes_bundled_gameplay_module_data(self) -> None:
         pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8")
+        self.assertIn('"bundled_addons/godot_playwright/*"', pyproject)
         self.assertIn('"bundled_gameplay_modules/save_load/*"', pyproject)
         self.assertIn('"bundled_gameplay_modules/save_load/addons/save_load/*"', pyproject)
         self.assertIn('"bundled_gameplay_modules/save_load/demo/scenes/*"', pyproject)
