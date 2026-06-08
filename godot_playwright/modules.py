@@ -353,6 +353,9 @@ def _check_copy_conflicts(
     force: bool,
 ) -> None:
     for operation in operations:
+        symlink_conflict = _first_symlink_path(operation.target, project_dir)
+        if symlink_conflict is not None:
+            raise ModuleError(f"Target path contains a symbolic link: {symlink_conflict}")
         parent_conflict = _first_non_directory_parent(operation.target, project_dir)
         if parent_conflict is not None:
             raise ModuleError(f"Target already exists and is not a directory: {parent_conflict}")
@@ -368,6 +371,15 @@ def _first_non_directory_parent(target: Path, project_dir: Path) -> Path | None:
         if parent.exists():
             return None if parent.is_dir() else parent
         parent = parent.parent
+    return None
+
+
+def _first_symlink_path(target: Path, project_dir: Path) -> Path | None:
+    current = target
+    while current != project_dir:
+        if current.is_symlink():
+            return current
+        current = current.parent
     return None
 
 
@@ -412,6 +424,8 @@ def _find_section(text: str, name: str) -> tuple[int, int] | None:
 
 def _copy_file(source: Path, target: Path, *, force: bool) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
+    if target.is_symlink():
+        raise ModuleError(f"Target path contains a symbolic link: {target}")
     if target.exists() and target.is_dir():
         raise ModuleError(f"Target is an existing directory: {target}")
     shutil.copy2(source, target)

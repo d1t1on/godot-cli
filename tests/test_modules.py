@@ -205,6 +205,31 @@ class ModuleInstallerUnitTests(unittest.TestCase):
                 project_file.read_text(encoding="utf-8"),
             )
 
+    def test_add_module_force_rejects_symlinked_targets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = _write_project(root / "project")
+            module_root = root / "modules"
+            _write_module_fixture(module_root)
+            victim = root / "victim.gd"
+            victim.write_text("extends Node\n# keep outside\n", encoding="utf-8")
+            target_dir = project / "addons" / "save_load"
+            target_dir.mkdir(parents=True)
+            symlink_target = target_dir / "save_service.gd"
+            symlink_target.symlink_to(victim)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8")
+                + '\n[autoload]\n\nSaveService="*res://addons/save_load/save_service.gd"\n',
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ModuleError, "symbolic link"):
+                add_module(project, "save_load", module_root=module_root, force=True)
+
+            self.assertEqual(victim.read_text(encoding="utf-8"), "extends Node\n# keep outside\n")
+            self.assertTrue(symlink_target.is_symlink())
+
     def test_add_module_force_rejects_file_targeting_existing_directory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -416,6 +441,115 @@ class SaveLoadModuleGodotTests(unittest.TestCase):
 
         self.assertEqual(report["failed"], 0, report["tests"])
         self.assertEqual(report["passed"], 1)
+
+    def test_load_slot_does_not_mutate_when_participant_discovery_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Save Load Duplicate Probe")
+            add_module(project, "save_load")
+            _write_duplicate_load_probe(project)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/duplicate_load_probe.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#DuplicateLoadProbe").call("run_duplicate_load")
+
+        self.assertFalse(result["load_result"]["ok"], result)
+        self.assertIn("Duplicate save_id: dup", result["load_result"]["errors"])
+        self.assertEqual(result["a_value"], 0)
+        self.assertEqual(result["b_value"], 0)
+
+
+def _write_duplicate_load_probe(project: Path) -> None:
+    (project / "scripts" / "duplicate_load_participant.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            @export var save_id: StringName = &"dup"
+
+            var value: int = 0
+
+
+            func _enter_tree() -> void:
+                add_to_group(&"save_participants")
+
+
+            func get_save_id() -> String:
+                return String(save_id)
+
+
+            func save_state() -> Dictionary:
+                return {"value": value}
+
+
+            func load_state(data: Dictionary) -> void:
+                value = int(data.get("value", 0))
+            """
+        ),
+        encoding="utf-8",
+    )
+    (project / "scripts" / "duplicate_load_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            @onready var actor_a: Node = $ActorA
+            @onready var actor_b: Node = $ActorB
+
+
+            func run_duplicate_load() -> Dictionary:
+                var save_service: Node = get_node("/root/SaveService")
+                actor_a.set("value", 0)
+                actor_b.set("value", 0)
+                DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("user://saves"))
+                var file := FileAccess.open("user://saves/duplicate_slot.json", FileAccess.WRITE)
+                file.store_string(JSON.stringify({
+                    "schema_version": 1,
+                    "module_version": "0.1.0",
+                    "saved_at": "2026-06-08T00:00:00Z",
+                    "scene": "res://scenes/duplicate_load_probe.tscn",
+                    "participants": {"dup": {"value": 5}},
+                }))
+                file = null
+                var load_result: Dictionary = save_service.call("load_slot", "duplicate_slot")
+                return {
+                    "load_result": load_result,
+                    "a_value": int(actor_a.get("value")),
+                    "b_value": int(actor_b.get("value")),
+                }
+            """
+        ),
+        encoding="utf-8",
+    )
+    (project / "scenes" / "duplicate_load_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=3 format=3]
+
+            [ext_resource type="Script" path="res://scripts/duplicate_load_probe.gd" id="1_root"]
+            [ext_resource type="Script" path="res://scripts/duplicate_load_participant.gd" id="2_actor"]
+
+            [node name="DuplicateLoadProbe" type="Node"]
+            script = ExtResource("1_root")
+
+            [node name="ActorA" type="Node" parent="."]
+            script = ExtResource("2_actor")
+            save_id = &"dup"
+
+            [node name="ActorB" type="Node" parent="."]
+            script = ExtResource("2_actor")
+            save_id = &"dup"
+            """
+        ),
+        encoding="utf-8",
+    )
 
 
 if __name__ == "__main__":

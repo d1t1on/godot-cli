@@ -78,6 +78,9 @@ func load_slot(slot_id: String) -> Dictionary:
 		return result
 
 	var live_participants := _participant_nodes_by_id(result, false)
+	if not result["ok"]:
+		load_failed.emit(normalized_slot_id, result)
+		return result
 	for save_id in saved_participants.keys():
 		var key := String(save_id)
 		if not live_participants.has(key):
