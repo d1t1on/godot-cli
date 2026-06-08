@@ -60,6 +60,18 @@ class ModuleInstallerUnitTests(unittest.TestCase):
                 relative_path.as_posix(),
             )
 
+    def test_save_load_docs_exist_for_humans_and_agents(self) -> None:
+        source_root = default_module_roots()[0] / "save_load"
+        bundled_root = default_module_roots()[1] / "save_load"
+        for root in (source_root, bundled_root):
+            readme = (root / "README.md").read_text(encoding="utf-8")
+            agent = (root / "AGENT.md").read_text(encoding="utf-8")
+            self.assertIn("godot-playwright module add /path/to/project save_load", readme)
+            self.assertIn("SaveService.save_slot", readme)
+            self.assertIn("save_participants", agent)
+            self.assertIn("NodePath fallback", agent)
+            self.assertIn("JSON-compatible", agent)
+
     def test_save_service_rejects_non_finite_float_states(self) -> None:
         source_root = default_module_roots()[0]
         service_source = (source_root / "save_load" / "addons" / "save_load" / "save_service.gd").read_text(
