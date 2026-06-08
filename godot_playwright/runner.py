@@ -2387,10 +2387,11 @@ def _render_test_card(result: dict[str, Any], report_dir: Path) -> str:
             f"<td><code>{escape(str(path))}</code></td>"
             "</tr>"
         )
+    empty_artifact_row = '<tr><td colspan="2" class="empty">No artifacts.</td></tr>'
     artifact_table = (
         "<table>"
         "<thead><tr><th>Artifact</th><th>Path</th></tr></thead>"
-        f"<tbody>{''.join(artifact_rows) if artifact_rows else '<tr><td colspan=\"2\" class=\"empty\">No artifacts.</td></tr>'}</tbody>"
+        f"<tbody>{''.join(artifact_rows) if artifact_rows else empty_artifact_row}</tbody>"
         "</table>"
         )
 
@@ -2416,10 +2417,11 @@ def _render_test_card(result: dict[str, Any], report_dir: Path) -> str:
             reason = str(annotation.get("reason", ""))
             label_text = kind if not reason else f"{kind}: {reason}"
             chips.append(f"<span class=\"chip\">{escape(label_text)}</span>")
+        empty_annotation = '<span class="empty">No annotations.</span>'
         annotation_html = (
             '<div class="block">'
             "<h2>Annotations</h2>"
-            f"<div class=\"chips\">{''.join(chips) if chips else '<span class=\"empty\">No annotations.</span>'}</div>"
+            f"<div class=\"chips\">{''.join(chips) if chips else empty_annotation}</div>"
             "</div>"
         )
 
@@ -2444,12 +2446,13 @@ def _render_test_card(result: dict[str, Any], report_dir: Path) -> str:
             if isinstance(error, dict) and error.get("message"):
                 error_text = f"{error.get('type', 'Error')}: {error.get('message', '')}"
             depth = max(0, int(step.get("depth", 0)))
+            empty_error = '<span class="empty">none</span>'
             rows.append(
                 "<tr>"
                 f"<td><code>{escape(str(step.get('status', '')))}</code></td>"
                 f"<td style=\"padding-left:{12 + depth * 18}px\">{escape(str(step.get('title', '')))}</td>"
                 f"<td><code>{escape(str(step.get('duration_ms', 0)))}</code></td>"
-                f"<td>{escape(error_text) if error_text else '<span class=\"empty\">none</span>'}</td>"
+                f"<td>{escape(error_text) if error_text else empty_error}</td>"
                 "</tr>"
             )
         steps_html = (
@@ -2542,14 +2545,16 @@ def _render_test_card(result: dict[str, Any], report_dir: Path) -> str:
                 f"<td><code>{escape(str(event.get('uptime_ms', '')))}</code></td>"
                 "</tr>"
             )
+        empty_event_types = '<span class="empty">No event types.</span>'
+        empty_preview_events = '<tr><td colspan="3" class="empty">No preview events.</td></tr>'
         trace_html = (
             '<div class="block">'
             "<h2>Trace</h2>"
             f"<p class=\"subhead\" style=\"margin:0 0 10px\">{escape(str(trace_summary.get('event_count', 0)))} events</p>"
-            f"<div class=\"chips\">{chips or '<span class=\"empty\">No event types.</span>'}</div>"
+            f"<div class=\"chips\">{chips or empty_event_types}</div>"
             "<table style=\"margin-top:10px\">"
             "<thead><tr><th>Type</th><th>Data</th><th>Uptime</th></tr></thead>"
-            f"<tbody>{''.join(preview_items) if preview_items else '<tr><td colspan=\"3\" class=\"empty\">No preview events.</td></tr>'}</tbody>"
+            f"<tbody>{''.join(preview_items) if preview_items else empty_preview_events}</tbody>"
             "</table>"
             "</div>"
         )
@@ -2623,12 +2628,13 @@ def _render_test_card(result: dict[str, Any], report_dir: Path) -> str:
                 for name, raw_path in attempt_artifacts.items():
                     href = _relative_path(Path(raw_path), report_dir)
                     artifact_links.append(f"<a href=\"{escape(href)}\">{escape(name)}</a>")
+            empty_artifacts = '<span class="empty">none</span>'
             rows.append(
                 "<tr>"
                 f"<td><code>{escape(str(attempt.get('attempt', 0)))}</code></td>"
                 f"<td>{escape(str(attempt.get('status', '')))}</td>"
                 f"<td><code>{escape(str(attempt.get('duration_ms', 0)))}</code></td>"
-                f"<td>{', '.join(artifact_links) if artifact_links else '<span class=\"empty\">none</span>'}</td>"
+                f"<td>{', '.join(artifact_links) if artifact_links else empty_artifacts}</td>"
                 "</tr>"
             )
         attempts_html = (

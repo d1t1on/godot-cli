@@ -22,6 +22,7 @@ from .export import ExportError, export_project
 from .install import install_addon
 from .inventory import ProjectInventoryError, inspect_project
 from .locator_index import ProjectNodeQueryError, find_project_nodes
+from .modules import ModuleError, add_module, list_modules
 from .probe import ProbeError, probe_project, probe_project_scenes
 from .project import ProjectError, init_project
 from .runner import TestRunnerError, format_report, run_tests
@@ -100,6 +101,15 @@ def main(argv: list[str] | None = None) -> int:
     install_parser.add_argument("project")
     install_parser.add_argument("--no-enable", action="store_true", help="Copy files without enabling the editor plugin.")
     install_parser.add_argument("--autoload", action="store_true", help="Add runtime autoload for game automation.")
+
+    module_parser = subparsers.add_parser("module", help="List and install reusable Godot gameplay modules.")
+    module_subparsers = module_parser.add_subparsers(dest="module_command", required=True)
+    module_subparsers.add_parser("list", help="List available gameplay modules.")
+    module_add_parser = module_subparsers.add_parser("add", help="Install a gameplay module into a Godot project.")
+    module_add_parser.add_argument("project")
+    module_add_parser.add_argument("module_name")
+    module_add_parser.add_argument("--demo", action="store_true", help="Install the module demo scenes, scripts, and tests.")
+    module_add_parser.add_argument("--force", action="store_true", help="Overwrite module-owned paths and Autoload entries.")
 
     launch_parser = subparsers.add_parser("launch", help="Launch Godot and wait for the automation server.")
     launch_parser.add_argument("project")
@@ -345,6 +355,15 @@ def main(argv: list[str] | None = None) -> int:
             target = install_addon(args.project, enable=not args.no_enable, autoload=args.autoload)
             print(target)
             return 0
+
+        if args.command == "module":
+            if args.module_command == "list":
+                print(_format_module_list(list_modules()))
+                return 0
+            if args.module_command == "add":
+                report = add_module(args.project, args.module_name, demo=args.demo, force=args.force)
+                print(_format_module_install_report(report))
+                return 0 if report["ok"] else 1
 
         if args.command == "launch":
             return _launch(args)
@@ -632,6 +651,7 @@ def main(argv: list[str] | None = None) -> int:
         TraceCodegenError,
         DesignUISpecError,
         DesignUIError,
+        ModuleError,
     ) as exc:
         print(f"godot-playwright: {exc}", file=sys.stderr)
         return 1
@@ -741,6 +761,32 @@ def _parse_cli_value(value: str | None) -> Any:
         return json.loads(value)
     except json.JSONDecodeError:
         return value
+
+
+def _format_module_list(modules: list[dict[str, Any]]) -> str:
+    if not modules:
+        return "No gameplay modules found"
+    return "\n".join(
+        f"{module.get('name')} {module.get('version')} - {module.get('description')}"
+        for module in modules
+    )
+
+
+def _format_module_install_report(report: dict[str, Any]) -> str:
+    status = "PASS" if report.get("ok") else "FAIL"
+    lines = [
+        f"{status} module {report.get('module')} {report.get('version')}",
+        f"  project: {report.get('project')}",
+        f"  demo: {'installed' if report.get('demo') else 'not installed'}",
+        f"  copied: {len(report.get('copied', []))}",
+    ]
+    for autoload in report.get("autoloads", []):
+        lines.append(f"  autoload {autoload.get('name')}: {autoload.get('path')}")
+    for warning in report.get("warnings", []):
+        lines.append(f"  warning: {warning}")
+    for error in report.get("errors", []):
+        lines.append(f"  error: {error}")
+    return "\n".join(lines)
 
 
 def _format_export_report(report: dict[str, Any]) -> str:

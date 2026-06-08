@@ -88,6 +88,52 @@ class CliConnectionTests(unittest.TestCase):
         self.assertTrue(design_ui.call_args.kwargs["no_screenshots"])
         self.assertTrue(design_ui.call_args.kwargs["force"])
 
+    def test_module_list_prints_available_modules(self) -> None:
+        stdout = StringIO()
+        modules = [
+            {
+                "name": "save_load",
+                "version": "0.1.0",
+                "display_name": "Save Load",
+                "description": "JSON save/load service for Godot projects.",
+                "godot_version": ">=4.6",
+            }
+        ]
+        with mock.patch("godot_playwright.cli.list_modules", return_value=modules) as list_call:
+            with redirect_stdout(stdout):
+                code = cli_main(["module", "list"])
+
+        self.assertEqual(code, 0)
+        list_call.assert_called_once_with()
+        self.assertIn("save_load 0.1.0 - JSON save/load service for Godot projects.", stdout.getvalue())
+
+    def test_module_add_forwards_install_options(self) -> None:
+        stdout = StringIO()
+        report = {
+            "ok": True,
+            "module": "save_load",
+            "version": "0.1.0",
+            "project": "/tmp/project",
+            "demo": True,
+            "copied": [
+                {"target": "res://addons/save_load/save_service.gd"},
+                {"target": "res://scenes/save_load_demo/save_load_demo.tscn"},
+            ],
+            "autoloads": [{"name": "SaveService", "path": "res://addons/save_load/save_service.gd"}],
+            "warnings": [],
+            "errors": [],
+        }
+        with mock.patch("godot_playwright.cli.add_module", return_value=report) as add_call:
+            with redirect_stdout(stdout):
+                code = cli_main(["module", "add", "/tmp/project", "save_load", "--demo", "--force"])
+
+        self.assertEqual(code, 0)
+        add_call.assert_called_once_with("/tmp/project", "save_load", demo=True, force=True)
+        output = stdout.getvalue()
+        self.assertIn("PASS module save_load 0.1.0", output)
+        self.assertIn("demo: installed", output)
+        self.assertIn("autoload SaveService", output)
+
 
 if __name__ == "__main__":
     unittest.main()

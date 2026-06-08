@@ -384,7 +384,7 @@ class ScriptCheckIntegrationTests(unittest.TestCase):
             valid = scripts / "agent_valid.gd"
             invalid = scripts / "agent_invalid.gd"
             valid.write_text("extends Node\n\nfunc value() -> int:\n\treturn 1\n", encoding="utf-8")
-            invalid.write_text("extends Node\n\nfunc value() -> int:\n\treturn \n", encoding="utf-8")
+            invalid.write_text("extends Node\n\nfunc value() -> int:\n\treturn 1 +\n", encoding="utf-8")
             artifacts = root / "artifacts"
 
             valid_report = check_script(project, "res://scripts/agent_valid.gd", artifacts_dir=artifacts)

@@ -52,6 +52,7 @@ from .project import init_project
 from .export import ExportError, export_project
 from .inventory import ProjectInventoryError, inspect_export_presets, inspect_project
 from .locator_index import ProjectNodeQueryError, find_project_nodes
+from .modules import ModuleError, add_module, list_modules, load_module_manifest
 from .checks import (
     ResourceCheckError,
     ScriptFileExpect,
@@ -132,6 +133,7 @@ __all__ = [
     "TraceCodegenError",
     "DesignUIError",
     "DesignUISpecError",
+    "ModuleError",
     "ProbeError",
     "SceneInspectError",
     "ProjectValidationError",
@@ -184,9 +186,12 @@ __all__ = [
     "generate_design_ui",
     "load_design_spec",
     "review_compiled_design",
+    "add_module",
     "init_project",
     "inspect_project",
     "inspect_export_presets",
+    "list_modules",
+    "load_module_manifest",
     "find_project_nodes",
     "export_project",
     "check_project_resources",

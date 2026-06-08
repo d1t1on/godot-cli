@@ -284,7 +284,7 @@ def check_script(
         "log_path": str(log),
         "command": cmd,
         "exit_code": exit_code,
-        "ok": exit_code == 0 and not timed_out and not import_cache_failed,
+        "ok": exit_code == 0 and not timed_out and not import_cache_failed and not diagnostics,
         "timed_out": timed_out,
         "duration_ms": duration_ms,
         "diagnostics": diagnostics,

@@ -41,7 +41,7 @@ class ProcessEnvTests(unittest.TestCase):
 
             linked = Path(env["XDG_DATA_HOME"]) / "godot" / "export_templates"
             self.assertTrue(linked.exists())
-            self.assertEqual(linked.resolve(), source)
+            self.assertEqual(linked.resolve(), source.resolve())
 
 
 if __name__ == "__main__":
