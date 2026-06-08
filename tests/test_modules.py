@@ -1,12 +1,21 @@
 from __future__ import annotations
 
 import json
+import shutil
 import tempfile
 import textwrap
 import unittest
 from pathlib import Path
 
-from godot_playwright.modules import ModuleError, add_module, list_modules, load_module_manifest
+from godot_playwright.checks import check_project_scripts
+from godot_playwright.modules import (
+    ModuleError,
+    add_module,
+    default_module_roots,
+    list_modules,
+    load_module_manifest,
+)
+from godot_playwright.project import init_project
 
 
 class ModuleInstallerUnitTests(unittest.TestCase):
@@ -21,6 +30,18 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertEqual(modules[0]["name"], "save_load")
         self.assertEqual(modules[0]["version"], "0.1.0")
         self.assertEqual(modules[0]["description"], "JSON save/load service for Godot projects.")
+
+    def test_repository_save_load_module_is_discoverable(self) -> None:
+        modules = list_modules()
+        save_load = next(module for module in modules if module["name"] == "save_load")
+        self.assertEqual(save_load["version"], "0.1.0")
+        self.assertEqual(save_load["godot_version"], ">=4.6")
+
+    def test_packaged_save_load_module_mirror_exists(self) -> None:
+        bundled_root = default_module_roots()[1]
+        manifest = load_module_manifest("save_load", module_root=bundled_root)
+        self.assertEqual(manifest["name"], "save_load")
+        self.assertTrue((bundled_root / "save_load" / "addons" / "save_load" / "save_service.gd").exists())
 
     def test_load_module_manifest_rejects_unknown_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -242,6 +263,23 @@ def _write_module_fixture(module_root: Path) -> Path:
         encoding="utf-8",
     )
     return module_dir
+
+
+@unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
+class SaveLoadModuleGodotTests(unittest.TestCase):
+    def test_installed_save_load_scripts_parse(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Save Load Parse Probe")
+            add_module(project, "save_load", demo=True)
+
+            report = check_project_scripts(
+                project,
+                ["res://addons/save_load", "res://scripts/save_load_demo"],
+                artifacts_dir=root / "artifacts",
+            )
+
+        self.assertTrue(report["ok"], report["diagnostics"])
 
 
 if __name__ == "__main__":
