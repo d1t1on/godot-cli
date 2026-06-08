@@ -10,3 +10,5 @@ godot-playwright-report*/
 build/
 dist/
 *.egg-info/
+
+.worktrees/
