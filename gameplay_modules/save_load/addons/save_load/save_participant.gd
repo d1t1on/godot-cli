@@ -1,11 +1,13 @@
 class_name SaveParticipant
 extends Node
 
+const SaveConstantsData := preload("res://addons/save_load/save_constants.gd")
+
 @export var save_id: StringName = &""
 
 
 func _enter_tree() -> void:
-	add_to_group(SaveConstants.GROUP)
+	add_to_group(SaveConstantsData.GROUP)
 
 
 func get_save_id() -> String:

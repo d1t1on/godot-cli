@@ -15,6 +15,7 @@ from godot_playwright.modules import (
     list_modules,
     load_module_manifest,
 )
+from godot_playwright.probe import probe_project
 from godot_playwright.project import init_project
 
 
@@ -42,6 +43,30 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         manifest = load_module_manifest("save_load", module_root=bundled_root)
         self.assertEqual(manifest["name"], "save_load")
         self.assertTrue((bundled_root / "save_load" / "addons" / "save_load" / "save_service.gd").exists())
+
+    def test_source_and_packaged_save_load_trees_are_identical(self) -> None:
+        source_root, bundled_root = default_module_roots()
+        source = source_root / "save_load"
+        bundled = bundled_root / "save_load"
+        source_files = sorted(path.relative_to(source) for path in source.rglob("*") if path.is_file())
+        bundled_files = sorted(path.relative_to(bundled) for path in bundled.rglob("*") if path.is_file())
+
+        self.assertEqual([path.as_posix() for path in source_files], [path.as_posix() for path in bundled_files])
+        for relative_path in source_files:
+            self.assertEqual(
+                (source / relative_path).read_bytes(),
+                (bundled / relative_path).read_bytes(),
+                relative_path.as_posix(),
+            )
+
+    def test_save_service_rejects_non_finite_float_states(self) -> None:
+        source_root = default_module_roots()[0]
+        service_source = (source_root / "save_load" / "addons" / "save_load" / "save_service.gd").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("is_nan(value)", service_source)
+        self.assertIn("is_inf(value)", service_source)
 
     def test_load_module_manifest_rejects_unknown_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -280,6 +305,17 @@ class SaveLoadModuleGodotTests(unittest.TestCase):
             )
 
         self.assertTrue(report["ok"], report["diagnostics"])
+
+    def test_installed_save_load_cold_launches_without_global_class_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Save Load Cold Launch Probe")
+            add_module(project, "save_load")
+            shutil.rmtree(project / ".godot", ignore_errors=True)
+
+            report = probe_project(project, frames=2, artifacts_dir=root / "artifacts")
+
+        self.assertTrue(report["ok"], report["log_summary"]["tail"])
 
 
 if __name__ == "__main__":
