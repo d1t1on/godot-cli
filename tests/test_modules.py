@@ -7,7 +7,8 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from godot_playwright.checks import check_project_scripts
+from godot_playwright import Godot
+from godot_playwright.checks import check_project_resources, check_project_scripts
 from godot_playwright.modules import (
     ModuleError,
     add_module,
@@ -316,6 +317,36 @@ class SaveLoadModuleGodotTests(unittest.TestCase):
             report = probe_project(project, frames=2, artifacts_dir=root / "artifacts")
 
         self.assertTrue(report["ok"], report["log_summary"]["tail"])
+
+    def test_save_load_demo_round_trip_runs_in_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Save Load Runtime Probe")
+            add_module(project, "save_load", demo=True)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/save_load_demo/save_load_demo.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            resource_report = check_project_resources(
+                project,
+                ["res://scenes/save_load_demo"],
+            )
+            self.assertTrue(resource_report["ok"], resource_report["diagnostics"])
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#SaveLoadDemo").call("run_round_trip")
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["saved_coins"], 2)
+        self.assertEqual(result["restored_coins"], 2)
+        self.assertEqual(result["restored_position"], [4.0, 8.0])
+        self.assertEqual(result["slot_count_after_save"], 1)
+        self.assertFalse(result["has_slot_after_delete"])
 
 
 if __name__ == "__main__":
