@@ -7,7 +7,7 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from godot_playwright import Godot
+from godot_playwright import Godot, run_tests
 from godot_playwright.checks import check_project_resources, check_project_scripts
 from godot_playwright.modules import (
     ModuleError,
@@ -339,6 +339,8 @@ class SaveLoadModuleGodotTests(unittest.TestCase):
             self.assertTrue(resource_report["ok"], resource_report["diagnostics"])
 
             with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                unrelated_result = godot.locator("/root/SaveService").call("save_slot", "unrelated_slot")
+                self.assertTrue(unrelated_result["ok"], unrelated_result)
                 result = godot.locator("#SaveLoadDemo").call("run_round_trip")
 
         self.assertTrue(result["ok"], result)
@@ -346,7 +348,25 @@ class SaveLoadModuleGodotTests(unittest.TestCase):
         self.assertEqual(result["restored_coins"], 2)
         self.assertEqual(result["restored_position"], [4.0, 8.0])
         self.assertEqual(result["slot_count_after_save"], 1)
+        self.assertTrue(result["has_slot_after_save"])
         self.assertFalse(result["has_slot_after_delete"])
+
+    def test_installed_save_load_demo_test_runs_without_main_scene_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Save Load Demo Test Probe")
+            add_module(project, "save_load", demo=True)
+
+            report = run_tests(
+                project,
+                [project / "tests" / "save_load_demo"],
+                artifacts_dir=root / "artifacts",
+                trace="off",
+                timeout=30,
+            )
+
+        self.assertEqual(report["failed"], 0, report["tests"])
+        self.assertEqual(report["passed"], 1)
 
 
 if __name__ == "__main__":
