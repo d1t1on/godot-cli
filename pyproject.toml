@@ -19,7 +19,14 @@ godot-playwright = "godot_playwright.cli:main"
 packages = ["godot_playwright"]
 
 [tool.setuptools.package-data]
-godot_playwright = ["bundled_addons/godot_playwright/*"]
+godot_playwright = [
+  "bundled_addons/godot_playwright/*",
+  "bundled_gameplay_modules/save_load/*",
+  "bundled_gameplay_modules/save_load/addons/save_load/*",
+  "bundled_gameplay_modules/save_load/demo/scenes/*",
+  "bundled_gameplay_modules/save_load/demo/scripts/*",
+  "bundled_gameplay_modules/save_load/tests/*",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

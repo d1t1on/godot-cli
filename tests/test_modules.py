@@ -45,6 +45,14 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertEqual(manifest["name"], "save_load")
         self.assertTrue((bundled_root / "save_load" / "addons" / "save_load" / "save_service.gd").exists())
 
+    def test_pyproject_includes_bundled_gameplay_module_data(self) -> None:
+        pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8")
+        self.assertIn('"bundled_gameplay_modules/save_load/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/save_load/addons/save_load/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/save_load/demo/scenes/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/save_load/demo/scripts/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/save_load/tests/*"', pyproject)
+
     def test_source_and_packaged_save_load_trees_are_identical(self) -> None:
         source_root, bundled_root = default_module_roots()
         source = source_root / "save_load"
