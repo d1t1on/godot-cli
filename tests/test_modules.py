@@ -587,6 +587,49 @@ class StateMachineModuleGodotTests(unittest.TestCase):
         self.assertEqual(result["snapshot"]["schema_version"], 1)
         self.assertEqual(result["transition_history"], ["idle>move", "move>attack", "attack>idle", "idle>attack"])
 
+    def test_state_machine_demo_runs_in_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="State Machine Demo Probe")
+            add_module(project, "state_machine", demo=True)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/state_machine_demo/state_machine_demo.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            resource_report = check_project_resources(project, ["res://scenes/state_machine_demo"])
+            self.assertTrue(resource_report["ok"], resource_report["diagnostics"])
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#StateMachineDemo").call("run_state_machine_demo")
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["initial_state"], "idle")
+        self.assertEqual(result["restored_state"], "attack")
+        self.assertFalse(result["forbidden_result"]["ok"], result["forbidden_result"])
+        self.assertEqual(result["transition_history"], ["idle>move", "move>attack", "attack>idle", "idle>attack"])
+
+    def test_installed_state_machine_demo_test_runs_without_main_scene_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="State Machine Demo Test Probe")
+            add_module(project, "state_machine", demo=True)
+
+            report = run_tests(
+                project,
+                [project / "tests" / "state_machine_demo"],
+                artifacts_dir=root / "artifacts",
+                trace="off",
+                timeout=30,
+            )
+
+        self.assertEqual(report["failed"], 0, report["tests"])
+        self.assertEqual(report["passed"], 1)
+
 
 def _write_duplicate_load_probe(project: Path) -> None:
     (project / "scripts" / "duplicate_load_participant.gd").write_text(
