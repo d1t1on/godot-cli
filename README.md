@@ -144,6 +144,8 @@ godot-playwright module add /tmp/agent-game inventory
 godot-playwright module add /tmp/agent-game inventory --demo
 godot-playwright module add /tmp/agent-game state_machine
 godot-playwright module add /tmp/agent-game state_machine --demo
+godot-playwright module add /tmp/agent-game effects
+godot-playwright module add /tmp/agent-game effects --demo
 ```
 
 The first gameplay module is `save_load`, a JSON slot save/load service. The
@@ -158,6 +160,14 @@ The `state_machine` module adds a node-based finite state machine. The installer
 copies `res://addons/state_machine/` without registering an Autoload. Games add a
 `StateMachine` node with child state nodes, then call `transition_to()` or
 `request_transition()` to move between states.
+
+The `effects` module adds a Resource-driven `EffectContainer` node for buffs,
+debuffs, status ailments, temporary modifiers, item effects, and tick/expiry
+events. The installer copies `res://addons/effects/` without registering an
+Autoload. Games create `EffectDefinition` resources, collect them in an
+`EffectDatabase`, and use `add_effect()` / `update_effects()` / `get_state()` to
+manage active effects with optional `save_load` persistence through stable
+`save_id` values.
 
 Probe runtime startup for script errors and warning/error log diagnostics:
 
