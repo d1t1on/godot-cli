@@ -58,7 +58,12 @@ func interact_best(data: Dictionary = {}) -> Dictionary:
 	return interact_with(candidate, data)
 
 
-func interact_with(target: Node, data: Dictionary = {}) -> Dictionary:
+func interact_with(target, data: Dictionary = {}) -> Dictionary:
+	if typeof(target) == TYPE_OBJECT and not is_instance_valid(target):
+		var freed_result := InteractionResultData.make(false)
+		InteractionResultData.add_error(freed_result, "Target is invalid")
+		_append_warnings(freed_result)
+		return freed_result
 	if not _is_interactable(target):
 		var invalid_result := InteractionResultData.make(false)
 		InteractionResultData.add_error(invalid_result, "Target must be an Interactable")
@@ -130,8 +135,12 @@ func _find_interactable(node: Node, record_warnings: bool) -> Node:
 	return null
 
 
-func _is_interactable(node: Node) -> bool:
-	return node != null and node is InteractableData
+func _is_interactable(node) -> bool:
+	if typeof(node) != TYPE_OBJECT:
+		return false
+	if not is_instance_valid(node):
+		return false
+	return node is InteractableData
 
 
 func _can_candidate_interact(candidate: Node, data: Dictionary = {}) -> bool:

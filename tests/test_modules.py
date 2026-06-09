@@ -1137,6 +1137,17 @@ def _write_interactor_probe(project: Path) -> None:
                 _assert_bool(bool(target_result.get("ok", false)), "targeted interaction works outside candidates", errors)
                 _assert_error(interactor.interact_with(Node.new()), "Target must be an Interactable", "wrong target", errors)
 
+                var freed_parent := Node.new()
+                add_child(freed_parent)
+                var freed_target = InteractableData.new()
+                freed_parent.add_child(freed_target)
+                freed_target.free()
+                var freed_result: Dictionary = interactor.interact_with(freed_target)
+                _assert_bool(not bool(freed_result.get("ok", true)), "freed target should fail", errors)
+                _assert_contains(freed_result.get("errors", []), "invalid", "freed target error", errors)
+                var string_result: Dictionary = interactor.call("interact_with", "not a node")
+                _assert_error(string_result, "Target must be an Interactable", "string target", errors)
+
                 var interactor_3d = Interactor3DData.new()
                 add_child(interactor_3d)
                 var no_candidate_3d: Dictionary = interactor_3d.interact_best()
