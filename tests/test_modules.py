@@ -1436,19 +1436,42 @@ def _write_effect_container_probe(project: Path) -> None:
         ),
         encoding="utf-8",
     )
+    (resources_dir / "short_tick.tres").write_text(
+        textwrap.dedent(
+            """\
+            [gd_resource type="Resource" script_class="EffectDefinition" load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://addons/effects/effect_definition.gd" id="1_short_tick"]
+
+            [resource]
+            script = ExtResource("1_short_tick")
+            effect_id = &"short_tick"
+            display_name = "Short Tick"
+            description = "Expires before its first tick."
+            tags = Array[StringName]([&"probe"])
+            duration = 0.5
+            tick_interval = 1.0
+            stack_mode = "refresh"
+            max_stacks = 1
+            default_data = {}
+            """
+        ),
+        encoding="utf-8",
+    )
     (resources_dir / "effect_database.tres").write_text(
         textwrap.dedent(
             """\
-            [gd_resource type="Resource" script_class="EffectDatabase" load_steps=5 format=3]
+            [gd_resource type="Resource" script_class="EffectDatabase" load_steps=6 format=3]
 
             [ext_resource type="Script" path="res://addons/effects/effect_database.gd" id="1_database"]
             [ext_resource type="Resource" path="res://resources/effects_probe/haste.tres" id="2_haste"]
             [ext_resource type="Resource" path="res://resources/effects_probe/poison.tres" id="3_poison"]
             [ext_resource type="Resource" path="res://resources/effects_probe/shielded.tres" id="4_shielded"]
+            [ext_resource type="Resource" path="res://resources/effects_probe/short_tick.tres" id="5_short_tick"]
 
             [resource]
             script = ExtResource("1_database")
-            effects = Array[Resource]([ExtResource("2_haste"), ExtResource("3_poison"), ExtResource("4_shielded")])
+            effects = Array[Resource]([ExtResource("2_haste"), ExtResource("3_poison"), ExtResource("4_shielded"), ExtResource("5_short_tick")])
             """
         ),
         encoding="utf-8",
@@ -1481,6 +1504,20 @@ def _write_effect_container_probe(project: Path) -> None:
                 _assert_bool(bool(add_shielded.get("ok", false)), "add shielded should succeed", errors)
                 _assert_bool(bool(ignored_shielded.get("ok", false)), "ignored shielded should report success", errors)
                 _assert_int(1, effects.get_stack_count("shielded"), "shielded stack count", errors)
+
+                effects.clear_effects()
+                var add_short_tick: Dictionary = effects.add_effect("short_tick", self, 1)
+                _assert_bool(bool(add_short_tick.get("ok", false)), "add short_tick should succeed", errors)
+                var short_tick_events: Array = effects.update_effects(2.0)
+                _assert_int(0, _count_events_for_effect(short_tick_events, "tick", "short_tick"), "short_tick should not tick after expiry", errors)
+                _assert_bool(_count_events_for_effect(short_tick_events, "expired", "short_tick") >= 1, "short_tick should expire", errors)
+                _assert_bool(not effects.has_effect("short_tick"), "short_tick should not remain active", errors)
+
+                effects.clear_effects()
+                effects.add_effect("haste", self, 1, {"source_id": "probe"})
+                effects.add_effect("haste", self, 1, {"speed_multiplier": 1.5})
+                effects.add_effect("poison", self, 5, {"source_id": "snake"})
+                effects.add_effect("shielded", self, 1)
 
                 var tick_events: Array = effects.update_effects(2.5)
                 var tick_count := _count_events(tick_events, "tick")
@@ -1518,6 +1555,12 @@ def _write_effect_container_probe(project: Path) -> None:
                 _assert_bool(not bool(malformed_state.get("ok", true)), "unknown saved effect should fail", errors)
                 var negative_delta_events: Array = effects.update_effects(-1.0)
                 _assert_bool(not bool(negative_delta_events[0].get("ok", true)), "negative delta should fail", errors)
+                var invalid_overlay_result: Dictionary = effects.add_effect("haste", self, 1, {"node": self})
+                _assert_bool(not bool(invalid_overlay_result.get("ok", true)), "non-json overlay data should fail", errors)
+                var string_schema_state: Dictionary = effects.apply_state({"schema_version": "1", "effects": []})
+                _assert_bool(not bool(string_schema_state.get("ok", true)), "string schema_version should fail", errors)
+                var invalid_state_data: Dictionary = effects.apply_state({"schema_version": 1, "effects": [{"effect_id": "poison", "stacks": 1, "remaining_duration": 1.0, "elapsed_time": 0.0, "tick_elapsed": 0.0, "data": {"node": self}}]})
+                _assert_bool(not bool(invalid_state_data.get("ok", true)), "non-json saved effect data should fail", errors)
 
                 return {
                     "ok": errors.is_empty(),
@@ -1538,6 +1581,11 @@ def _write_effect_container_probe(project: Path) -> None:
                     "bad_stacks_result": bad_stacks_result,
                     "malformed_state": malformed_state,
                     "negative_delta_event": negative_delta_events[0],
+                    "add_short_tick": add_short_tick,
+                    "short_tick_events": short_tick_events,
+                    "invalid_overlay_result": invalid_overlay_result,
+                    "string_schema_state": string_schema_state,
+                    "invalid_state_data": invalid_state_data,
                 }
 
 
@@ -1545,6 +1593,14 @@ def _write_effect_container_probe(project: Path) -> None:
                 var count := 0
                 for event in events:
                     if String(event.get("type", "")) == event_type:
+                        count += 1
+                return count
+
+
+            func _count_events_for_effect(events: Array, event_type: String, effect_id: String) -> int:
+                var count := 0
+                for event in events:
+                    if String(event.get("type", "")) == event_type and String(event.get("effect_id", "")) == effect_id:
                         count += 1
                 return count
 

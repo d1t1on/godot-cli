@@ -34,6 +34,9 @@ func add_effect(effect_id: String, source: Node = null, stacks: int = 1, data: D
     if stacks <= 0:
         EffectResultData.add_error(result, "stacks must be positive")
         return result
+    if not _is_json_compatible(data):
+        EffectResultData.add_error(result, "data must be JSON-compatible")
+        return result
     var definition = _definition_for_result(result, normalized)
     if definition == null:
         return result
@@ -138,10 +141,14 @@ func update_effects(delta: float) -> Array[Dictionary]:
         if definition == null:
             index += 1
             continue
-        effect["elapsed_time"] = float(effect.get("elapsed_time", 0.0)) + delta
+        var remaining_duration := float(effect.get("remaining_duration", -1.0))
+        var active_delta := delta
+        if remaining_duration >= 0.0:
+            active_delta = max(0.0, min(delta, remaining_duration))
+        effect["elapsed_time"] = float(effect.get("elapsed_time", 0.0)) + active_delta
         var tick_interval := float(definition.tick_interval)
         if tick_interval > 0.0:
-            effect["tick_elapsed"] = float(effect.get("tick_elapsed", 0.0)) + delta
+            effect["tick_elapsed"] = float(effect.get("tick_elapsed", 0.0)) + active_delta
             while float(effect.get("tick_elapsed", 0.0)) >= tick_interval:
                 effect["tick_elapsed"] = float(effect.get("tick_elapsed", 0.0)) - tick_interval
                 var tick_event := _make_event(EffectConstantsData.EVENT_TICK, effect, null, 0, 0)
@@ -149,9 +156,8 @@ func update_effects(delta: float) -> Array[Dictionary]:
                 effect_ticked.emit(String(effect.get("effect_id", "")), EffectInstanceData.copy_instance(effect), tick_event)
                 effects_changed.emit(tick_event)
 
-        var remaining_duration := float(effect.get("remaining_duration", -1.0))
         if remaining_duration >= 0.0:
-            remaining_duration -= delta
+            remaining_duration -= active_delta
             effect["remaining_duration"] = remaining_duration
             if remaining_duration <= 0.0:
                 var expired_effect := EffectInstanceData.copy_instance(effect)
@@ -297,7 +303,8 @@ func _validate_database(result: Dictionary) -> bool:
 
 func _parse_state_effects(data: Dictionary, result: Dictionary) -> Array[Dictionary]:
     var parsed_effects: Array[Dictionary] = []
-    if int(data.get("schema_version", -1)) != EffectConstantsData.SCHEMA_VERSION:
+    var schema_version = data.get("schema_version", null)
+    if typeof(schema_version) != TYPE_INT or int(schema_version) != EffectConstantsData.SCHEMA_VERSION:
         EffectResultData.add_error(result, "schema_version must be %d" % EffectConstantsData.SCHEMA_VERSION)
     var raw_effects = data.get("effects", null)
     if not (raw_effects is Array):
@@ -352,6 +359,8 @@ func _parse_state_effects(data: Dictionary, result: Dictionary) -> Array[Diction
         var effect_data = effect.get("data", {})
         if not (effect_data is Dictionary):
             EffectResultData.add_error(result, "effects[%d].data must be a Dictionary" % index)
+        elif not _is_json_compatible(effect_data):
+            EffectResultData.add_error(result, "effects[%d].data must be JSON-compatible" % index)
         if (result.get("errors", []) as Array).size() == effect_error_count:
             parsed_effects.append({
                 "effect_id": normalized,
@@ -380,6 +389,29 @@ func _parse_float(value: Variant, field_name: String, result: Dictionary) -> flo
             return number
     EffectResultData.add_error(result, "%s must be a finite number" % field_name)
     return 0.0
+
+
+func _is_json_compatible(value: Variant) -> bool:
+    match typeof(value):
+        TYPE_NIL, TYPE_BOOL, TYPE_STRING, TYPE_INT:
+            return true
+        TYPE_FLOAT:
+            var number := float(value)
+            return not is_nan(number) and not is_inf(number)
+        TYPE_ARRAY:
+            for item in value:
+                if not _is_json_compatible(item):
+                    return false
+            return true
+        TYPE_DICTIONARY:
+            for key in value.keys():
+                if typeof(key) != TYPE_STRING and typeof(key) != TYPE_STRING_NAME:
+                    return false
+                if not _is_json_compatible(value[key]):
+                    return false
+            return true
+        _:
+            return false
 
 
 func _find_effect_index(effect_id: String) -> int:
