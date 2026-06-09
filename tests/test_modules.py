@@ -148,6 +148,20 @@ class ModuleInstallerUnitTests(unittest.TestCase):
             self.assertIn("NodePath fallback", agent)
             self.assertIn("JSON-compatible", agent)
 
+    def test_inventory_docs_exist_for_humans_and_agents(self) -> None:
+        source_root = default_module_roots()[0] / "inventory"
+        bundled_root = default_module_roots()[1] / "inventory"
+        for root in (source_root, bundled_root):
+            readme = (root / "README.md").read_text(encoding="utf-8")
+            agent = (root / "AGENT.md").read_text(encoding="utf-8")
+            self.assertIn("godot-playwright module add /path/to/project inventory", readme)
+            self.assertIn("Inventory.add_item", readme)
+            self.assertIn("InventoryItemDatabase", readme)
+            self.assertIn("save_load", readme)
+            self.assertIn("item_id", agent)
+            self.assertIn("Resource", agent)
+            self.assertIn("SaveService", agent)
+
     def test_save_service_rejects_non_finite_float_states(self) -> None:
         source_root = default_module_roots()[0]
         service_source = (source_root / "save_load" / "addons" / "save_load" / "save_service.gd").read_text(
