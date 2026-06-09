@@ -1,0 +1,32 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/state_machine_demo/state_machine_demo.gd" id="1_root"]
+[ext_resource type="Script" path="res://addons/state_machine/state_machine.gd" id="2_machine"]
+[ext_resource type="Script" path="res://scripts/state_machine_demo/state_machine_demo_idle.gd" id="3_idle"]
+[ext_resource type="Script" path="res://scripts/state_machine_demo/state_machine_demo_move.gd" id="4_move"]
+[ext_resource type="Script" path="res://scripts/state_machine_demo/state_machine_demo_attack.gd" id="5_attack"]
+[ext_resource type="Script" path="res://scripts/state_machine_demo/state_machine_demo_forbidden.gd" id="6_forbidden"]
+
+[node name="StateMachineDemo" type="Node"]
+script = ExtResource("1_root")
+
+[node name="StateMachine" type="Node" parent="."]
+script = ExtResource("2_machine")
+initial_state_id = &"idle"
+auto_start = true
+
+[node name="Idle" type="Node" parent="StateMachine"]
+script = ExtResource("3_idle")
+state_id = &"idle"
+
+[node name="Move" type="Node" parent="StateMachine"]
+script = ExtResource("4_move")
+state_id = &"move"
+
+[node name="Attack" type="Node" parent="StateMachine"]
+script = ExtResource("5_attack")
+state_id = &"attack"
+
+[node name="Forbidden" type="Node" parent="StateMachine"]
+script = ExtResource("6_forbidden")
+state_id = &"forbidden"
