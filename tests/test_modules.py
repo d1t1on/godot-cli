@@ -751,6 +751,9 @@ class InventoryModuleGodotTests(unittest.TestCase):
         self.assertTrue(result["ok"], result)
         self.assertTrue(result["save_load_checked"], result)
         self.assertEqual(result["save_load_coin_quantity"], 3)
+        self.assertEqual(result["potion_quantity"], 2)
+        self.assertEqual(result["key_quantity"], 1)
+        self.assertEqual(result["state_round_trip_quantity"], 2)
 
 
 def _write_inventory_database_probe(project: Path) -> None:

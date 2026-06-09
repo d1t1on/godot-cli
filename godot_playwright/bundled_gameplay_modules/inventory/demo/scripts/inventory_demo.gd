@@ -26,8 +26,10 @@ func run_inventory_demo() -> Dictionary:
 	inventory.add_item("coin", 4)
 	var apply_result: Dictionary = inventory.apply_state(saved_state)
 	_assert_bool(apply_result.get("ok", false), "state apply should succeed", errors)
-	_assert_int(2, inventory.get_quantity("potion"), "potion quantity after state round-trip", errors)
-	_assert_int(1, inventory.get_quantity("key"), "key quantity after state round-trip", errors)
+	var round_trip_potion_quantity := int(inventory.get_quantity("potion"))
+	var round_trip_key_quantity := int(inventory.get_quantity("key"))
+	_assert_int(2, round_trip_potion_quantity, "potion quantity after state round-trip", errors)
+	_assert_int(1, round_trip_key_quantity, "key quantity after state round-trip", errors)
 
 	var save_load_checked := false
 	var save_load_coin_quantity := -1
@@ -56,9 +58,9 @@ func run_inventory_demo() -> Dictionary:
 		"remove_potions": remove_potions,
 		"add_key": add_key,
 		"apply_result": apply_result,
-		"potion_quantity": inventory.get_quantity("potion"),
-		"key_quantity": inventory.get_quantity("key"),
-		"state_round_trip_quantity": inventory.get_quantity("potion"),
+		"potion_quantity": round_trip_potion_quantity,
+		"key_quantity": round_trip_key_quantity,
+		"state_round_trip_quantity": round_trip_potion_quantity,
 		"save_load_checked": save_load_checked,
 		"save_load_coin_quantity": save_load_coin_quantity,
 	}
