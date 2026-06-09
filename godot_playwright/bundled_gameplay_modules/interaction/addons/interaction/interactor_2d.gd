@@ -48,14 +48,14 @@ func get_best_prompt() -> String:
 	return _candidate_prompt(candidate)
 
 
-func interact_best() -> Dictionary:
+func interact_best(data: Dictionary = {}) -> Dictionary:
 	var candidate := get_best_candidate()
 	if candidate == null:
 		var result := InteractionResultData.make(false)
 		InteractionResultData.add_error(result, "No interaction candidate")
 		_append_warnings(result)
 		return result
-	return interact_with(candidate)
+	return interact_with(candidate, data)
 
 
 func interact_with(target: Node, data: Dictionary = {}) -> Dictionary:

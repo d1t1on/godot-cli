@@ -1045,11 +1045,26 @@ def _write_interactable_probe(project: Path) -> None:
 
 
 def _write_interactor_probe(project: Path) -> None:
+    (project / "scripts" / "data_echo_interactable.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends "res://addons/interaction/interactable.gd"
+
+
+            func interact(actor: Node, data: Dictionary = {}) -> Dictionary:
+                var result := super.interact(actor, data)
+                result["data_source"] = String(data.get("source", ""))
+                return result
+            """
+        ),
+        encoding="utf-8",
+    )
     (project / "scripts" / "interactor_probe.gd").write_text(
         textwrap.dedent(
             """\
             extends Node
 
+            const DataEchoInteractableData := preload("res://scripts/data_echo_interactable.gd")
             const InteractableData := preload("res://addons/interaction/interactable.gd")
             const Interactor2DData := preload("res://addons/interaction/interactor_2d.gd")
             const Interactor3DData := preload("res://addons/interaction/interactor_3d.gd")
@@ -1077,7 +1092,7 @@ def _write_interactor_probe(project: Path) -> None:
                 var high_area := Area2D.new()
                 high_area.name = "HighArea"
                 add_child(high_area)
-                var high = InteractableData.new()
+                var high = DataEchoInteractableData.new()
                 high.name = "Interactable"
                 high.interaction_id = &"high"
                 high.prompt = "Use High"
@@ -1089,9 +1104,10 @@ def _write_interactor_probe(project: Path) -> None:
                 _assert_int(2, interactor.get_candidates().size(), "candidate count", errors)
                 _assert_string("high", interactor.get_best_candidate().get_interaction_id(), "priority winner", errors)
                 _assert_string("Use High", interactor.get_best_prompt(), "best prompt", errors)
-                var high_result: Dictionary = interactor.interact_best()
+                var high_result: Dictionary = interactor.interact_best({"source": "best"})
                 _assert_bool(bool(high_result.get("ok", false)), "high interaction succeeds", errors)
                 _assert_string("high", String(high_result.get("interaction_id", "")), "high result id", errors)
+                _assert_string("best", String(high_result.get("data_source", "")), "interact_best data forwarding", errors)
 
                 high.enabled = false
                 _assert_string("low", interactor.get_best_candidate().get_interaction_id(), "disabled high is skipped", errors)
