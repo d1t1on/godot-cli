@@ -385,6 +385,24 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn("InventoryConstantsData.SCHEMA_VERSION", inventory_source)
         self.assertIn("does not fit current capacity", inventory_source)
 
+    def test_effects_source_defines_container_api(self) -> None:
+        source_root = default_module_roots()[0]
+        container_source = (source_root / "effects" / "addons" / "effects" / "effect_container.gd").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("class_name EffectContainer", container_source)
+        self.assertIn("@export var database: Resource", container_source)
+        self.assertIn("@export var save_id: StringName", container_source)
+        self.assertIn("@export var auto_update: bool = true", container_source)
+        self.assertIn("signal effect_added", container_source)
+        self.assertIn("func add_effect(effect_id: String, source: Node = null, stacks: int = 1, data: Dictionary = {}) -> Dictionary", container_source)
+        self.assertIn("func remove_effect(effect_id: String, stacks: int = 0) -> Dictionary", container_source)
+        self.assertIn("func update_effects(delta: float) -> Array[Dictionary]", container_source)
+        self.assertIn("func get_state() -> Dictionary", container_source)
+        self.assertIn("func apply_state(data: Dictionary) -> Dictionary", container_source)
+        self.assertIn("func save_state() -> Dictionary", container_source)
+
     def test_load_module_manifest_rejects_unknown_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             module_root = Path(tmp) / "modules"
@@ -981,6 +999,38 @@ class EffectsModuleGodotTests(unittest.TestCase):
 
         self.assertTrue(result["ok"], result)
 
+    def test_effect_container_runtime_probe_validates_core_behavior(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Effects Runtime Probe")
+            add_module(project, "effects")
+            _write_effect_container_probe(project)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/effect_container_probe.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            resource_report = check_project_resources(project, ["res://scenes/effect_container_probe.tscn"])
+            self.assertTrue(resource_report["ok"], resource_report["diagnostics"])
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#EffectContainerProbe").call("run_probe")
+
+        self.assertTrue(result["ok"], result)
+        self.assertTrue(result["add_haste"]["ok"], result["add_haste"])
+        self.assertEqual(result["haste_stacks"], 1)
+        self.assertEqual(result["poison_stacks"], 3)
+        self.assertGreaterEqual(result["tick_count"], 2)
+        self.assertFalse(result["has_haste_after_expire"])
+        self.assertTrue(result["has_shielded_after_update"])
+        self.assertEqual(result["round_trip_poison_stacks"], 2)
+        self.assertFalse(result["unknown_result"]["ok"], result["unknown_result"])
+        self.assertFalse(result["negative_delta_event"]["ok"], result["negative_delta_event"])
+
 
 @unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
 class StateMachineModuleGodotTests(unittest.TestCase):
@@ -1307,6 +1357,232 @@ def _write_effect_database_probe(project: Path) -> None:
 
             [node name="EffectDatabaseProbe" type="Node"]
             script = ExtResource("1_probe")
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_effect_container_probe(project: Path) -> None:
+    scripts_dir = project / "scripts"
+    scenes_dir = project / "scenes"
+    resources_dir = project / "resources" / "effects_probe"
+    scripts_dir.mkdir(exist_ok=True)
+    scenes_dir.mkdir(exist_ok=True)
+    resources_dir.mkdir(parents=True, exist_ok=True)
+    (resources_dir / "haste.tres").write_text(
+        textwrap.dedent(
+            """\
+            [gd_resource type="Resource" script_class="EffectDefinition" load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://addons/effects/effect_definition.gd" id="1_haste"]
+
+            [resource]
+            script = ExtResource("1_haste")
+            effect_id = &"haste"
+            display_name = "Haste"
+            description = "Temporarily increases speed."
+            tags = Array[StringName]([&"buff", &"movement"])
+            duration = 2.0
+            tick_interval = 0.0
+            stack_mode = "refresh"
+            max_stacks = 1
+            default_data = {"speed_multiplier": 1.25}
+            """
+        ),
+        encoding="utf-8",
+    )
+    (resources_dir / "poison.tres").write_text(
+        textwrap.dedent(
+            """\
+            [gd_resource type="Resource" script_class="EffectDefinition" load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://addons/effects/effect_definition.gd" id="1_poison"]
+
+            [resource]
+            script = ExtResource("1_poison")
+            effect_id = &"poison"
+            display_name = "Poison"
+            description = "Ticks periodically."
+            tags = Array[StringName]([&"debuff", &"dot"])
+            duration = 5.0
+            tick_interval = 1.0
+            stack_mode = "stack"
+            max_stacks = 3
+            default_data = {"damage": 2}
+            """
+        ),
+        encoding="utf-8",
+    )
+    (resources_dir / "shielded.tres").write_text(
+        textwrap.dedent(
+            """\
+            [gd_resource type="Resource" script_class="EffectDefinition" load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://addons/effects/effect_definition.gd" id="1_shielded"]
+
+            [resource]
+            script = ExtResource("1_shielded")
+            effect_id = &"shielded"
+            display_name = "Shielded"
+            description = "Permanent shield marker."
+            tags = Array[StringName]([&"buff", &"defense"])
+            duration = 0.0
+            tick_interval = 0.0
+            stack_mode = "ignore"
+            max_stacks = 1
+            default_data = {"armor_bonus": 3}
+            """
+        ),
+        encoding="utf-8",
+    )
+    (resources_dir / "effect_database.tres").write_text(
+        textwrap.dedent(
+            """\
+            [gd_resource type="Resource" script_class="EffectDatabase" load_steps=5 format=3]
+
+            [ext_resource type="Script" path="res://addons/effects/effect_database.gd" id="1_database"]
+            [ext_resource type="Resource" path="res://resources/effects_probe/haste.tres" id="2_haste"]
+            [ext_resource type="Resource" path="res://resources/effects_probe/poison.tres" id="3_poison"]
+            [ext_resource type="Resource" path="res://resources/effects_probe/shielded.tres" id="4_shielded"]
+
+            [resource]
+            script = ExtResource("1_database")
+            effects = Array[Resource]([ExtResource("2_haste"), ExtResource("3_poison"), ExtResource("4_shielded")])
+            """
+        ),
+        encoding="utf-8",
+    )
+    (scripts_dir / "effect_container_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            @onready var effects: Node = $EffectContainer
+
+
+            func run_probe() -> Dictionary:
+                var errors: Array[String] = []
+                effects.clear_effects()
+                var add_haste: Dictionary = effects.add_effect("haste", self, 1, {"source_id": "probe"})
+                _assert_bool(bool(add_haste.get("ok", false)), "add haste should succeed", errors)
+                var refresh_haste: Dictionary = effects.add_effect("haste", self, 1, {"speed_multiplier": 1.5})
+                _assert_bool(bool(refresh_haste.get("ok", false)), "refresh haste should succeed", errors)
+                _assert_int(1, effects.get_stack_count("haste"), "haste stack count", errors)
+                _assert_float(1.5, float(effects.get_effect("haste").get("data", {}).get("speed_multiplier", 0.0)), "haste data overlay", errors)
+
+                var add_poison: Dictionary = effects.add_effect("poison", self, 5, {"source_id": "snake"})
+                _assert_bool(bool(add_poison.get("ok", false)), "add poison should succeed", errors)
+                _assert_int(3, effects.get_stack_count("poison"), "poison stack count after clamp", errors)
+                _assert_int(2, int(add_poison.get("remainder", -1)), "poison stack remainder", errors)
+
+                var add_shielded: Dictionary = effects.add_effect("shielded", self, 1)
+                var ignored_shielded: Dictionary = effects.add_effect("shielded", self, 1)
+                _assert_bool(bool(add_shielded.get("ok", false)), "add shielded should succeed", errors)
+                _assert_bool(bool(ignored_shielded.get("ok", false)), "ignored shielded should report success", errors)
+                _assert_int(1, effects.get_stack_count("shielded"), "shielded stack count", errors)
+
+                var tick_events: Array = effects.update_effects(2.5)
+                var tick_count := _count_events(tick_events, "tick")
+                _assert_int(2, tick_count, "poison tick count after 2.5s", errors)
+                var expiry_events: Array = effects.update_effects(3.0)
+                _assert_bool(_count_events(expiry_events, "expired") >= 1, "haste or poison should expire", errors)
+                _assert_bool(not effects.has_effect("haste"), "haste should expire", errors)
+                _assert_bool(effects.has_effect("shielded"), "permanent shielded should remain", errors)
+                var has_haste_after_expire: bool = effects.has_effect("haste")
+                var has_shielded_after_update: bool = effects.has_effect("shielded")
+
+                effects.clear_effects()
+                effects.add_effect("poison", self, 2)
+                effects.update_effects(1.25)
+                var saved_state: Dictionary = effects.get_state()
+                effects.clear_effects()
+                effects.add_effect("haste", self, 1)
+                var apply_result: Dictionary = effects.apply_state(saved_state)
+                _assert_bool(bool(apply_result.get("ok", false)), "apply state should succeed", errors)
+                _assert_int(2, effects.get_stack_count("poison"), "poison stack count after state round-trip", errors)
+                _assert_bool(not effects.has_effect("haste"), "state round-trip should replace active effects", errors)
+
+                var remove_one: Dictionary = effects.remove_effect("poison", 1)
+                _assert_bool(bool(remove_one.get("ok", false)), "partial remove should succeed", errors)
+                _assert_int(1, effects.get_stack_count("poison"), "poison stack count after partial remove", errors)
+                var remove_all: Dictionary = effects.remove_effect("poison")
+                _assert_bool(bool(remove_all.get("ok", false)), "full remove should succeed", errors)
+                _assert_bool(not effects.has_effect("poison"), "poison should be removed", errors)
+
+                var unknown_result: Dictionary = effects.add_effect("missing", self, 1)
+                _assert_bool(not bool(unknown_result.get("ok", true)), "unknown effect should fail", errors)
+                var bad_stacks_result: Dictionary = effects.add_effect("haste", self, 0)
+                _assert_bool(not bool(bad_stacks_result.get("ok", true)), "zero stacks should fail", errors)
+                var malformed_state: Dictionary = effects.apply_state({"schema_version": 1, "effects": [{"effect_id": "missing", "stacks": 1}]})
+                _assert_bool(not bool(malformed_state.get("ok", true)), "unknown saved effect should fail", errors)
+                var negative_delta_events: Array = effects.update_effects(-1.0)
+                _assert_bool(not bool(negative_delta_events[0].get("ok", true)), "negative delta should fail", errors)
+
+                return {
+                    "ok": errors.is_empty(),
+                    "errors": errors,
+                    "add_haste": add_haste,
+                    "refresh_haste": refresh_haste,
+                    "haste_stacks": 1,
+                    "add_poison": add_poison,
+                    "poison_stacks": 3,
+                    "tick_count": tick_count,
+                    "has_haste_after_expire": has_haste_after_expire,
+                    "has_shielded_after_update": has_shielded_after_update,
+                    "apply_result": apply_result,
+                    "round_trip_poison_stacks": 2,
+                    "remove_one": remove_one,
+                    "remove_all": remove_all,
+                    "unknown_result": unknown_result,
+                    "bad_stacks_result": bad_stacks_result,
+                    "malformed_state": malformed_state,
+                    "negative_delta_event": negative_delta_events[0],
+                }
+
+
+            func _count_events(events: Array, event_type: String) -> int:
+                var count := 0
+                for event in events:
+                    if String(event.get("type", "")) == event_type:
+                        count += 1
+                return count
+
+
+            func _assert_bool(value: bool, message: String, errors: Array[String]) -> void:
+                if not value:
+                    errors.append(message)
+
+
+            func _assert_int(expected: int, actual: int, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %d, got %d" % [label, expected, actual])
+
+
+            func _assert_float(expected: float, actual: float, label: String, errors: Array[String]) -> void:
+                if absf(expected - actual) > 0.001:
+                    errors.append("%s: expected %.3f, got %.3f" % [label, expected, actual])
+            """
+        ),
+        encoding="utf-8",
+    )
+    (scenes_dir / "effect_container_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=4 format=3]
+
+            [ext_resource type="Script" path="res://scripts/effect_container_probe.gd" id="1_probe"]
+            [ext_resource type="Script" path="res://addons/effects/effect_container.gd" id="2_container"]
+            [ext_resource type="Resource" path="res://resources/effects_probe/effect_database.tres" id="3_database"]
+
+            [node name="EffectContainerProbe" type="Node"]
+            script = ExtResource("1_probe")
+
+            [node name="EffectContainer" type="Node" parent="."]
+            script = ExtResource("2_container")
+            database = ExtResource("3_database")
+            save_id = &"probe_effects"
+            auto_update = false
             """
         ),
         encoding="utf-8",
