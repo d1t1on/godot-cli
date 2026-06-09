@@ -533,6 +533,59 @@ class SaveLoadModuleGodotTests(unittest.TestCase):
         self.assertEqual(result["b_value"], 0)
 
 
+@unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
+class StateMachineModuleGodotTests(unittest.TestCase):
+    def test_installed_state_machine_scripts_parse(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="State Machine Parse Probe")
+            add_module(project, "state_machine")
+
+            report = check_project_scripts(
+                project,
+                ["res://addons/state_machine"],
+                artifacts_dir=root / "artifacts",
+            )
+
+        self.assertTrue(report["ok"], report["diagnostics"])
+
+    def test_state_machine_runtime_probe_validates_core_behavior(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="State Machine Runtime Probe")
+            add_module(project, "state_machine")
+            _write_state_machine_runtime_probe(project)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/state_machine_probe.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            resource_report = check_project_resources(project, ["res://scenes/state_machine_probe.tscn"])
+            self.assertTrue(resource_report["ok"], resource_report["diagnostics"])
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#StateMachineProbe").call("run_state_machine_probe")
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["initial_state"], "idle")
+        self.assertEqual(result["state_ids"], ["idle", "move", "attack", "forbidden", "reentrant"])
+        self.assertTrue(result["move_result"]["ok"], result["move_result"])
+        self.assertTrue(result["attack_result"]["ok"], result["attack_result"])
+        self.assertFalse(result["forbidden_result"]["ok"], result["forbidden_result"])
+        self.assertFalse(result["reentrant_result"]["ok"], result["reentrant_result"])
+        self.assertFalse(result["duplicate_result"]["ok"], result["duplicate_result"])
+        self.assertIn("Duplicate state_id: dup", result["duplicate_result"]["errors"])
+        self.assertTrue(result["restore_result"]["ok"], result["restore_result"])
+        self.assertEqual(result["restored_state"], "attack")
+        self.assertEqual(result["snapshot"]["current_state_id"], "attack")
+        self.assertEqual(result["snapshot"]["schema_version"], 1)
+        self.assertEqual(result["transition_history"], ["idle>move", "move>attack", "attack>idle", "idle>attack"])
+
+
 def _write_duplicate_load_probe(project: Path) -> None:
     (project / "scripts" / "duplicate_load_participant.gd").write_text(
         textwrap.dedent(
@@ -613,6 +666,206 @@ def _write_duplicate_load_probe(project: Path) -> None:
             [node name="ActorB" type="Node" parent="."]
             script = ExtResource("2_actor")
             save_id = &"dup"
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_state_machine_runtime_probe(project: Path) -> None:
+    scripts_dir = project / "scripts"
+    scenes_dir = project / "scenes"
+    scripts_dir.mkdir(exist_ok=True)
+    scenes_dir.mkdir(exist_ok=True)
+    (scripts_dir / "state_machine_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            @onready var machine: Node = $StateMachine
+
+            var transition_history: Array[String] = []
+            var reentrant_result: Dictionary = {}
+
+
+            func _ready() -> void:
+                machine.state_changed.connect(_on_state_changed)
+
+
+            func run_state_machine_probe() -> Dictionary:
+                var initial_state := String(machine.call("get_current_state_id"))
+                var state_ids: Array = machine.call("get_state_ids")
+                var move_result: Dictionary = machine.call("transition_to", "move", {"speed": 4})
+                var attack_result: Dictionary = machine.call("get_current_state").call("request_attack")
+                var forbidden_result: Dictionary = machine.call("transition_to", "forbidden")
+                var snapshot: Dictionary = machine.call("get_state")
+                var idle_result: Dictionary = machine.call("transition_to", "idle")
+                var restore_result: Dictionary = machine.call("apply_state", snapshot)
+                var restored_state := String(machine.call("get_current_state_id"))
+                var transition_history_before_reentrant := transition_history.duplicate()
+                var reentrant_transition: Dictionary = machine.call("transition_to", "reentrant")
+                var duplicate_result: Dictionary = _run_duplicate_id_probe()
+                var ok := initial_state == "idle"
+                ok = ok and bool(move_result.get("ok", false))
+                ok = ok and bool(attack_result.get("ok", false))
+                ok = ok and not bool(forbidden_result.get("ok", true))
+                ok = ok and bool(idle_result.get("ok", false))
+                ok = ok and bool(restore_result.get("ok", false))
+                ok = ok and bool(reentrant_transition.get("ok", false))
+                ok = ok and not bool(reentrant_result.get("ok", true))
+                ok = ok and not bool(duplicate_result.get("ok", true))
+                return {
+                    "ok": ok,
+                    "initial_state": initial_state,
+                    "state_ids": state_ids,
+                    "move_result": move_result,
+                    "attack_result": attack_result,
+                    "forbidden_result": forbidden_result,
+                    "snapshot": snapshot,
+                    "idle_result": idle_result,
+                    "restore_result": restore_result,
+                    "restored_state": restored_state,
+                    "reentrant_transition": reentrant_transition,
+                    "reentrant_result": reentrant_result,
+                    "duplicate_result": duplicate_result,
+                    "transition_history": transition_history_before_reentrant,
+                }
+
+
+            func _run_duplicate_id_probe() -> Dictionary:
+                var machine_script = load("res://addons/state_machine/state_machine.gd")
+                var state_script = load("res://addons/state_machine/state.gd")
+                var duplicate_machine: Node = machine_script.new()
+                duplicate_machine.set("auto_start", false)
+                var state_a: Node = state_script.new()
+                state_a.name = "FirstDup"
+                state_a.set("state_id", &"dup")
+                var state_b: Node = state_script.new()
+                state_b.name = "SecondDup"
+                state_b.set("state_id", &"dup")
+                duplicate_machine.add_child(state_a)
+                duplicate_machine.add_child(state_b)
+                add_child(duplicate_machine)
+                return duplicate_machine.call("start")
+
+
+            func _on_state_changed(previous_state_id: String, current_state_id: String, data: Dictionary) -> void:
+                transition_history.append("%s>%s" % [previous_state_id, current_state_id])
+            """
+        ),
+        encoding="utf-8",
+    )
+    (scripts_dir / "state_machine_probe_idle.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends "res://addons/state_machine/state.gd"
+
+            var enter_count: int = 0
+
+
+            func enter(previous_state: Node, data: Dictionary) -> void:
+                enter_count += 1
+            """
+        ),
+        encoding="utf-8",
+    )
+    (scripts_dir / "state_machine_probe_move.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends "res://addons/state_machine/state.gd"
+
+            var last_speed: int = 0
+
+
+            func enter(previous_state: Node, data: Dictionary) -> void:
+                last_speed = int(data.get("speed", 0))
+
+
+            func request_attack() -> Dictionary:
+                return get_parent().call("request_transition", "attack", {"source": "move"})
+            """
+        ),
+        encoding="utf-8",
+    )
+    (scripts_dir / "state_machine_probe_attack.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends "res://addons/state_machine/state.gd"
+
+            var entered_from: String = ""
+
+
+            func enter(previous_state: Node, data: Dictionary) -> void:
+                if previous_state != null:
+                    entered_from = String(previous_state.name)
+            """
+        ),
+        encoding="utf-8",
+    )
+    (scripts_dir / "state_machine_probe_forbidden.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends "res://addons/state_machine/state.gd"
+
+
+            func can_enter(previous_state: Node, data: Dictionary) -> bool:
+                return false
+            """
+        ),
+        encoding="utf-8",
+    )
+    (scripts_dir / "state_machine_probe_reentrant.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends "res://addons/state_machine/state.gd"
+
+
+            func enter(previous_state: Node, data: Dictionary) -> void:
+                get_parent().get_parent().set("reentrant_result", get_parent().call("request_transition", "idle"))
+            """
+        ),
+        encoding="utf-8",
+    )
+    (scenes_dir / "state_machine_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=8 format=3]
+
+            [ext_resource type="Script" path="res://scripts/state_machine_probe.gd" id="1_root"]
+            [ext_resource type="Script" path="res://addons/state_machine/state_machine.gd" id="2_machine"]
+            [ext_resource type="Script" path="res://scripts/state_machine_probe_idle.gd" id="3_idle"]
+            [ext_resource type="Script" path="res://scripts/state_machine_probe_move.gd" id="4_move"]
+            [ext_resource type="Script" path="res://scripts/state_machine_probe_attack.gd" id="5_attack"]
+            [ext_resource type="Script" path="res://scripts/state_machine_probe_forbidden.gd" id="6_forbidden"]
+            [ext_resource type="Script" path="res://scripts/state_machine_probe_reentrant.gd" id="7_reentrant"]
+
+            [node name="StateMachineProbe" type="Node"]
+            script = ExtResource("1_root")
+
+            [node name="StateMachine" type="Node" parent="."]
+            script = ExtResource("2_machine")
+            initial_state_id = &"idle"
+            auto_start = true
+
+            [node name="Idle" type="Node" parent="StateMachine"]
+            script = ExtResource("3_idle")
+            state_id = &"idle"
+
+            [node name="Move" type="Node" parent="StateMachine"]
+            script = ExtResource("4_move")
+            state_id = &"move"
+
+            [node name="Attack" type="Node" parent="StateMachine"]
+            script = ExtResource("5_attack")
+            state_id = &"attack"
+
+            [node name="Forbidden" type="Node" parent="StateMachine"]
+            script = ExtResource("6_forbidden")
+            state_id = &"forbidden"
+
+            [node name="Reentrant" type="Node" parent="StateMachine"]
+            script = ExtResource("7_reentrant")
+            state_id = &"reentrant"
             """
         ),
         encoding="utf-8",
