@@ -1555,12 +1555,20 @@ def _write_effect_container_probe(project: Path) -> None:
                 _assert_bool(not bool(malformed_state.get("ok", true)), "unknown saved effect should fail", errors)
                 var negative_delta_events: Array = effects.update_effects(-1.0)
                 _assert_bool(not bool(negative_delta_events[0].get("ok", true)), "negative delta should fail", errors)
+                var infinite_delta_events: Array = effects.update_effects(INF)
+                _assert_bool(not infinite_delta_events.is_empty(), "infinite delta should return an error event", errors)
+                if not infinite_delta_events.is_empty():
+                    _assert_bool(not bool(infinite_delta_events[0].get("ok", true)), "infinite delta should fail", errors)
                 var invalid_overlay_result: Dictionary = effects.add_effect("haste", self, 1, {"node": self})
                 _assert_bool(not bool(invalid_overlay_result.get("ok", true)), "non-json overlay data should fail", errors)
                 var string_schema_state: Dictionary = effects.apply_state({"schema_version": "1", "effects": []})
                 _assert_bool(not bool(string_schema_state.get("ok", true)), "string schema_version should fail", errors)
                 var invalid_state_data: Dictionary = effects.apply_state({"schema_version": 1, "effects": [{"effect_id": "poison", "stacks": 1, "remaining_duration": 1.0, "elapsed_time": 0.0, "tick_elapsed": 0.0, "data": {"node": self}}]})
                 _assert_bool(not bool(invalid_state_data.get("ok", true)), "non-json saved effect data should fail", errors)
+                var excessive_tick_state: Dictionary = effects.apply_state({"schema_version": 1, "effects": [{"effect_id": "poison", "stacks": 1, "remaining_duration": 1.0, "elapsed_time": 0.0, "tick_elapsed": 100.0, "data": {}}]})
+                _assert_bool(not bool(excessive_tick_state.get("ok", true)), "excessive saved tick_elapsed should fail", errors)
+                var no_tick_elapsed_state: Dictionary = effects.apply_state({"schema_version": 1, "effects": [{"effect_id": "haste", "stacks": 1, "remaining_duration": 1.0, "elapsed_time": 0.0, "tick_elapsed": 1.0, "data": {}}]})
+                _assert_bool(not bool(no_tick_elapsed_state.get("ok", true)), "no-tick effect saved tick_elapsed should fail", errors)
 
                 return {
                     "ok": errors.is_empty(),
@@ -1586,6 +1594,9 @@ def _write_effect_container_probe(project: Path) -> None:
                     "invalid_overlay_result": invalid_overlay_result,
                     "string_schema_state": string_schema_state,
                     "invalid_state_data": invalid_state_data,
+                    "infinite_delta_event": infinite_delta_events[0] if not infinite_delta_events.is_empty() else {},
+                    "excessive_tick_state": excessive_tick_state,
+                    "no_tick_elapsed_state": no_tick_elapsed_state,
                 }
 
 

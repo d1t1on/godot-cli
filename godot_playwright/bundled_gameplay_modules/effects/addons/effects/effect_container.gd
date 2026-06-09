@@ -122,13 +122,13 @@ func get_stack_count(effect_id: String) -> int:
 
 func update_effects(delta: float) -> Array[Dictionary]:
     var events: Array[Dictionary] = []
-    if delta < 0.0:
+    if is_nan(delta) or is_inf(delta) or delta < 0.0:
         events.append({
             "ok": false,
             "type": EffectConstantsData.EVENT_ERROR,
             "effect_id": "",
             "warnings": [],
-            "errors": ["delta must be zero or greater"],
+            "errors": ["delta must be finite and zero or greater"],
         })
         return events
     if delta == 0.0:
@@ -356,6 +356,12 @@ func _parse_state_effects(data: Dictionary, result: Dictionary) -> Array[Diction
             EffectResultData.add_error(result, "effects[%d].elapsed_time must be zero or greater" % index)
         if tick_elapsed < 0.0:
             EffectResultData.add_error(result, "effects[%d].tick_elapsed must be zero or greater" % index)
+        var tick_interval := float(definition.tick_interval)
+        if tick_interval > 0.0:
+            if tick_elapsed >= tick_interval:
+                EffectResultData.add_error(result, "effects[%d].tick_elapsed must be less than tick_interval" % index)
+        elif tick_elapsed > 0.0:
+            EffectResultData.add_error(result, "effects[%d].tick_elapsed must be zero when tick_interval is zero" % index)
         var effect_data = effect.get("data", {})
         if not (effect_data is Dictionary):
             EffectResultData.add_error(result, "effects[%d].data must be a Dictionary" % index)
