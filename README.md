@@ -144,6 +144,8 @@ godot-playwright module add /tmp/agent-game inventory
 godot-playwright module add /tmp/agent-game inventory --demo
 godot-playwright module add /tmp/agent-game state_machine
 godot-playwright module add /tmp/agent-game state_machine --demo
+godot-playwright module add /tmp/agent-game interaction
+godot-playwright module add /tmp/agent-game interaction --demo
 ```
 
 The first gameplay module is `save_load`, a JSON slot save/load service. The
@@ -158,6 +160,8 @@ The `state_machine` module adds a node-based finite state machine. The installer
 copies `res://addons/state_machine/` without registering an Autoload. Games add a
 `StateMachine` node with child state nodes, then call `transition_to()` or
 `request_transition()` to move between states.
+
+The `interaction` module adds reusable `Interactable`, `Interactor2D`, and `Interactor3D` components for nearby object interaction. It supports prompts, priority-based candidate selection, structured interaction results, JSON-compatible `get_state()` / `apply_state(data)`, and optional integration with project-specific inventory or save/load behavior without requiring either module.
 
 Probe runtime startup for script errors and warning/error log diagnostics:
 
