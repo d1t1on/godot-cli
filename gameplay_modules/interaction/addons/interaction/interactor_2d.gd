@@ -212,3 +212,4 @@ func _append_warnings(result: Dictionary) -> void:
 	for warning in _warnings:
 		if not result_warnings.has(warning):
 			result_warnings.append(warning)
+	_warnings.clear()

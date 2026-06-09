@@ -1113,6 +1113,25 @@ def _write_interactor_probe(project: Path) -> None:
                 _assert_string("high", String(high_result.get("interaction_id", "")), "high result id", errors)
                 _assert_string("best", String(high_result.get("data_source", "")), "interact_best data forwarding", errors)
 
+                var success_ambiguous_area := Area2D.new()
+                success_ambiguous_area.name = "SuccessAmbiguousArea"
+                add_child(success_ambiguous_area)
+                var success_first = InteractableData.new()
+                success_first.name = "SuccessFirstInteractable"
+                success_ambiguous_area.add_child(success_first)
+                var success_second = InteractableData.new()
+                success_second.name = "SuccessSecondInteractable"
+                success_ambiguous_area.add_child(success_second)
+                interactor.call("_on_node_entered", success_ambiguous_area)
+                var warned_success: Dictionary = interactor.interact_best({"allowed": true, "source": "warned"})
+                _assert_bool(bool(warned_success.get("ok", false)), "warning-carrying success should pass", errors)
+                _assert_contains(warned_success.get("warnings", []), "Ambiguous", "success ambiguous warning", errors)
+                _assert_string("warned", String(warned_success.get("data_source", "")), "warning success data forwarding", errors)
+                var clean_success: Dictionary = interactor.interact_best({"allowed": true, "source": "clean"})
+                _assert_bool(bool(clean_success.get("ok", false)), "post-warning success should pass", errors)
+                _assert_not_contains(clean_success.get("warnings", []), "Ambiguous", "success ambiguous warning should be consumed", errors)
+                _assert_string("clean", String(clean_success.get("data_source", "")), "clean success data forwarding", errors)
+
                 high.enabled = false
                 _assert_string("low", interactor.get_best_candidate().get_interaction_id(), "disabled high is skipped", errors)
                 interactor.call("_on_node_exited", low_area)
