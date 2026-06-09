@@ -157,6 +157,22 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn("is_nan(value)", service_source)
         self.assertIn("is_inf(value)", service_source)
 
+    def test_inventory_source_defines_resource_helpers(self) -> None:
+        source_root = default_module_roots()[0]
+        inventory_root = source_root / "inventory" / "addons" / "inventory"
+        definition = (inventory_root / "inventory_item_definition.gd").read_text(encoding="utf-8")
+        database = (inventory_root / "inventory_item_database.gd").read_text(encoding="utf-8")
+        result = (inventory_root / "inventory_result.gd").read_text(encoding="utf-8")
+
+        self.assertIn("class_name InventoryItemDefinition", definition)
+        self.assertIn("@export var item_id: StringName", definition)
+        self.assertIn("@export_range(1, 999, 1) var max_stack: int = 99", definition)
+        self.assertIn("class_name InventoryItemDatabase", database)
+        self.assertIn("func get_item(item_id: String) -> Resource", database)
+        self.assertIn("func validate() -> Dictionary", database)
+        self.assertIn("class_name InventoryResult", result)
+        self.assertIn("static func add_error", result)
+
     def test_load_module_manifest_rejects_unknown_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             module_root = Path(tmp) / "modules"
