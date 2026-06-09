@@ -639,6 +639,26 @@ class InteractionSeedModuleGodotTests(unittest.TestCase):
 
         self.assertTrue(result["ok"], result)
 
+    def test_interactor_candidate_selection_runs_in_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Interaction Interactor Probe")
+            add_module(project, "interaction")
+            _write_interactor_probe(project)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/interactor_probe.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#InteractorProbe").call("run_probe")
+
+        self.assertTrue(result["ok"], result)
+
 
 @unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
 class InventorySeedModuleGodotTests(unittest.TestCase):
@@ -1017,6 +1037,136 @@ def _write_interactable_probe(project: Path) -> None:
             [ext_resource type="Script" path="res://scripts/interactable_probe.gd" id="1_probe_script"]
 
             [node name="InteractableProbe" type="Node"]
+            script = ExtResource("1_probe_script")
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_interactor_probe(project: Path) -> None:
+    (project / "scripts" / "interactor_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            const InteractableData := preload("res://addons/interaction/interactable.gd")
+            const Interactor2DData := preload("res://addons/interaction/interactor_2d.gd")
+            const Interactor3DData := preload("res://addons/interaction/interactor_3d.gd")
+
+
+            func run_probe() -> Dictionary:
+                var errors: Array[String] = []
+                var actor := Node2D.new()
+                actor.name = "Actor"
+                add_child(actor)
+                var interactor = Interactor2DData.new()
+                interactor.name = "Interactor2D"
+                actor.add_child(interactor)
+
+                var low_area := Area2D.new()
+                low_area.name = "LowArea"
+                add_child(low_area)
+                var low = InteractableData.new()
+                low.name = "Interactable"
+                low.interaction_id = &"low"
+                low.prompt = "Use Low"
+                low.priority = 1
+                low_area.add_child(low)
+
+                var high_area := Area2D.new()
+                high_area.name = "HighArea"
+                add_child(high_area)
+                var high = InteractableData.new()
+                high.name = "Interactable"
+                high.interaction_id = &"high"
+                high.prompt = "Use High"
+                high.priority = 10
+                high_area.add_child(high)
+
+                interactor.call("_on_node_entered", low_area)
+                interactor.call("_on_node_entered", high_area)
+                _assert_int(2, interactor.get_candidates().size(), "candidate count", errors)
+                _assert_string("high", interactor.get_best_candidate().get_interaction_id(), "priority winner", errors)
+                _assert_string("Use High", interactor.get_best_prompt(), "best prompt", errors)
+                var high_result: Dictionary = interactor.interact_best()
+                _assert_bool(bool(high_result.get("ok", false)), "high interaction succeeds", errors)
+                _assert_string("high", String(high_result.get("interaction_id", "")), "high result id", errors)
+
+                high.enabled = false
+                _assert_string("low", interactor.get_best_candidate().get_interaction_id(), "disabled high is skipped", errors)
+                interactor.call("_on_node_exited", low_area)
+                _assert_int(0, interactor.get_candidates().size(), "disabled remaining candidate hidden", errors)
+
+                interactor.clear_candidates()
+                var no_candidate: Dictionary = interactor.interact_best()
+                _assert_bool(not bool(no_candidate.get("ok", true)), "no candidate should fail", errors)
+                _assert_contains(no_candidate.get("errors", []), "No interaction candidate", "no candidate error", errors)
+
+                var ambiguous_area := Area2D.new()
+                ambiguous_area.name = "AmbiguousArea"
+                add_child(ambiguous_area)
+                var first = InteractableData.new()
+                first.name = "FirstInteractable"
+                ambiguous_area.add_child(first)
+                var second = InteractableData.new()
+                second.name = "SecondInteractable"
+                ambiguous_area.add_child(second)
+                interactor.call("_on_node_entered", ambiguous_area)
+                var ambiguous_result: Dictionary = interactor.interact_best()
+                _assert_bool(not bool(ambiguous_result.get("ok", true)), "ambiguous candidate should not be selected", errors)
+                _assert_contains(ambiguous_result.get("warnings", []), "Ambiguous", "ambiguous warning", errors)
+
+                var target_result: Dictionary = interactor.interact_with(low)
+                _assert_bool(bool(target_result.get("ok", false)), "targeted interaction works outside candidates", errors)
+                _assert_error(interactor.interact_with(Node.new()), "Target must be an Interactable", "wrong target", errors)
+
+                var interactor_3d = Interactor3DData.new()
+                add_child(interactor_3d)
+                var no_candidate_3d: Dictionary = interactor_3d.interact_best()
+                _assert_bool(not bool(no_candidate_3d.get("ok", true)), "3D interactor exposes same no-candidate behavior", errors)
+                _assert_int(0, interactor_3d.get_candidates().size(), "3D empty candidates", errors)
+
+                return {"ok": errors.is_empty(), "errors": errors}
+
+
+            func _assert_error(result: Dictionary, expected_text: String, label: String, errors: Array[String]) -> void:
+                _assert_bool(not bool(result.get("ok", true)), "%s should fail" % label, errors)
+                _assert_contains(result.get("errors", []), expected_text, label, errors)
+
+
+            func _assert_bool(value: bool, message: String, errors: Array[String]) -> void:
+                if not value:
+                    errors.append(message)
+
+
+            func _assert_int(expected: int, actual: int, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %d, got %d" % [label, expected, actual])
+
+
+            func _assert_string(expected: String, actual: String, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %s, got %s" % [label, expected, actual])
+
+
+            func _assert_contains(messages: Array, needle: String, label: String, errors: Array[String]) -> void:
+                for message in messages:
+                    if String(message).contains(needle):
+                        return
+                errors.append("%s: missing %s in %s" % [label, needle, str(messages)])
+            """
+        ),
+        encoding="utf-8",
+    )
+    (project / "scenes" / "interactor_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://scripts/interactor_probe.gd" id="1_probe_script"]
+
+            [node name="InteractorProbe" type="Node"]
             script = ExtResource("1_probe_script")
             """
         ),
