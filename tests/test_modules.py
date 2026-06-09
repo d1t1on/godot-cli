@@ -173,6 +173,22 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn("class_name InventoryResult", result)
         self.assertIn("static func add_error", result)
 
+    def test_inventory_source_defines_core_stack_api(self) -> None:
+        source_root = default_module_roots()[0]
+        inventory_source = (source_root / "inventory" / "addons" / "inventory" / "inventory.gd").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("class_name Inventory", inventory_source)
+        self.assertIn("@export var database: Resource", inventory_source)
+        self.assertIn("@export_range(0, 999, 1) var capacity: int = 12", inventory_source)
+        self.assertIn("func add_item(item_id: String, quantity: int = 1) -> Dictionary", inventory_source)
+        self.assertIn("func remove_item(item_id: String, quantity: int = 1) -> Dictionary", inventory_source)
+        self.assertIn("func has_item(item_id: String, quantity: int = 1) -> bool", inventory_source)
+        self.assertIn("func get_quantity(item_id: String) -> int", inventory_source)
+        self.assertIn("func get_stacks() -> Array", inventory_source)
+        self.assertIn("func _validate_database(result: Dictionary) -> bool", inventory_source)
+
     def test_load_module_manifest_rejects_unknown_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             module_root = Path(tmp) / "modules"
