@@ -951,20 +951,31 @@ def _write_interactable_probe(project: Path) -> None:
                 var saved_state: Dictionary = interactable.get_state()
                 _assert_int(1, int(saved_state.get("schema_version", -1)), "state schema", errors)
                 _assert_string("door_01", String(saved_state.get("interaction_id", "")), "state id", errors)
+                saved_state["schema_version"] = 1.0
+                saved_state["interaction_id"] = "saved_diagnostic"
+                saved_state["priority"] = 10.0
                 interactable.prompt = "Changed"
                 interactable.priority = 0
                 interactable.enabled = false
                 var apply_result: Dictionary = interactable.apply_state(saved_state)
                 _assert_bool(bool(apply_result.get("ok", false)), "apply_state succeeds", errors)
+                _assert_string("door_01", interactable.get_interaction_id(), "configured id remains", errors)
                 _assert_string("Open", interactable.prompt, "restored prompt", errors)
                 _assert_int(10, interactable.priority, "restored priority", errors)
                 _assert_bool(interactable.enabled, "restored enabled", errors)
 
-                var bad_state := {"schema_version": 1, "interaction_id": "door_01", "enabled": "yes", "prompt": "Open", "priority": 10}
+                var bad_state := {"schema_version": 1.0, "interaction_id": "door_01", "enabled": "yes", "prompt": "Should Not Apply", "priority": 99.0}
                 var bad_result: Dictionary = interactable.apply_state(bad_state)
                 _assert_bool(not bool(bad_result.get("ok", true)), "bad state should fail", errors)
                 _assert_contains(bad_result.get("errors", []), "enabled", "bad enabled error", errors)
+                _assert_string("Open", interactable.prompt, "bad state should not mutate prompt", errors)
+                _assert_int(10, interactable.priority, "bad state should not mutate priority", errors)
                 _assert_bool(interactable.enabled, "bad state should not mutate enabled", errors)
+
+                var partial_result: Dictionary = interactable.apply_state({"enabled": false})
+                _assert_bool(not bool(partial_result.get("ok", true)), "partial state should fail", errors)
+                _assert_contains(partial_result.get("errors", []), "schema_version", "partial state schema error", errors)
+                _assert_bool(interactable.enabled, "partial state should not mutate enabled", errors)
 
                 interactable.enabled = false
                 var disabled_result: Dictionary = interactable.interact(self)

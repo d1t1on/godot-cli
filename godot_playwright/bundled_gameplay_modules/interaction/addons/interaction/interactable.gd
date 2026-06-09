@@ -44,31 +44,27 @@ func get_state() -> Dictionary:
 
 func apply_state(data: Dictionary) -> Dictionary:
 	var result := InteractionResultData.make(true, get_interaction_id(), _target_name())
-	var next_interaction_id := interaction_id
 	var next_prompt := prompt
 	var next_priority := priority
 	var next_enabled := enabled
 
+	for field_name in ["schema_version", "interaction_id", "enabled", "prompt", "priority"]:
+		_require_field(data, field_name, result)
+
 	if data.has("schema_version"):
-		if typeof(data["schema_version"]) != TYPE_INT:
-			InteractionResultData.add_error(result, "schema_version must be an int")
-		elif int(data["schema_version"]) != InteractionConstantsData.SCHEMA_VERSION:
+		var schema_version := _parse_integer_field(data["schema_version"], "schema_version", result)
+		if schema_version != InteractionConstantsData.SCHEMA_VERSION:
 			InteractionResultData.add_error(result, "schema_version must be %d" % InteractionConstantsData.SCHEMA_VERSION)
 	if data.has("interaction_id"):
 		if typeof(data["interaction_id"]) != TYPE_STRING:
 			InteractionResultData.add_error(result, "interaction_id must be a string")
-		else:
-			next_interaction_id = StringName(String(data["interaction_id"]).strip_edges())
 	if data.has("prompt"):
 		if typeof(data["prompt"]) != TYPE_STRING:
 			InteractionResultData.add_error(result, "prompt must be a string")
 		else:
 			next_prompt = String(data["prompt"])
 	if data.has("priority"):
-		if typeof(data["priority"]) != TYPE_INT:
-			InteractionResultData.add_error(result, "priority must be an int")
-		else:
-			next_priority = int(data["priority"])
+		next_priority = _parse_integer_field(data["priority"], "priority", result)
 	if data.has("enabled"):
 		if typeof(data["enabled"]) != TYPE_BOOL:
 			InteractionResultData.add_error(result, "enabled must be a bool")
@@ -77,11 +73,28 @@ func apply_state(data: Dictionary) -> Dictionary:
 	if not bool(result.get("ok", false)):
 		return result
 
-	interaction_id = next_interaction_id
 	prompt = next_prompt
 	priority = next_priority
 	enabled = next_enabled
 	return result
+
+
+func _require_field(data: Dictionary, field_name: String, result: Dictionary) -> bool:
+	if data.has(field_name):
+		return true
+	InteractionResultData.add_error(result, "%s is required" % field_name)
+	return false
+
+
+func _parse_integer_field(value: Variant, field_name: String, result: Dictionary) -> int:
+	if typeof(value) == TYPE_INT:
+		return int(value)
+	if typeof(value) == TYPE_FLOAT:
+		var float_value := float(value)
+		if float_value == floor(float_value):
+			return int(float_value)
+	InteractionResultData.add_error(result, "%s must be an integer" % field_name)
+	return 0
 
 
 func _target_name() -> String:
