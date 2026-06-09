@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="InventoryItemDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/inventory/inventory_item_definition.gd" id="1_key_script"]
+
+[resource]
+script = ExtResource("1_key_script")
+item_id = &"key"
+display_name = "Dungeon Key"
+description = "Opens one locked door."
+max_stack = 1

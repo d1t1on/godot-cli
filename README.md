@@ -139,7 +139,8 @@ Install reusable Godot gameplay modules for agent-built games:
 ```sh
 godot-playwright module list
 godot-playwright module add /tmp/agent-game save_load
-godot-playwright module add /tmp/agent-game save_load --demo
+godot-playwright module add /tmp/agent-game inventory
+godot-playwright module add /tmp/agent-game inventory --demo
 ```
 
 The first gameplay module is `save_load`, a JSON slot save/load service. The
@@ -147,6 +148,8 @@ installer copies `res://addons/save_load/`, registers the `SaveService` Autoload
 and can optionally install a tiny demo scene plus copied Python test. Gameplay
 objects participate by joining the `save_participants` group and implementing
 `save_state()` / `load_state(data)` with JSON-compatible state.
+
+The `inventory` module adds a reusable `Inventory` node component backed by `InventoryItemDefinition` and `InventoryItemDatabase` Resources. It supports finite stack capacity, add/remove/query operations, JSON-compatible `get_state()` / `apply_state(data)`, and optional persistence through `save_load` when an inventory has a stable `save_id`.
 
 Probe runtime startup for script errors and warning/error log diagnostics:
 

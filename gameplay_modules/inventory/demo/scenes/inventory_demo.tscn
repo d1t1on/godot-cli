@@ -1,0 +1,14 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/inventory_demo/inventory_demo.gd" id="1_demo_script"]
+[ext_resource type="Script" path="res://addons/inventory/inventory.gd" id="2_inventory_script"]
+[ext_resource type="Resource" path="res://resources/inventory_demo/item_database.tres" id="3_item_database"]
+
+[node name="InventoryDemo" type="Node"]
+script = ExtResource("1_demo_script")
+
+[node name="Inventory" type="Node" parent="."]
+script = ExtResource("2_inventory_script")
+database = ExtResource("3_item_database")
+capacity = 2
+save_id = &"demo_inventory"

@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="InventoryItemDatabase" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://addons/inventory/inventory_item_database.gd" id="1_database_script"]
+[ext_resource type="Resource" path="res://resources/inventory_demo/potion.tres" id="2_potion"]
+[ext_resource type="Resource" path="res://resources/inventory_demo/key.tres" id="3_key"]
+[ext_resource type="Resource" path="res://resources/inventory_demo/coin.tres" id="4_coin"]
+
+[resource]
+script = ExtResource("1_database_script")
+items = Array[Resource]([ExtResource("2_potion"), ExtResource("3_key"), ExtResource("4_coin")])

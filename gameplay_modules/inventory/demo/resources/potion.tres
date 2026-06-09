@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="InventoryItemDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/inventory/inventory_item_definition.gd" id="1_potion_script"]
+
+[resource]
+script = ExtResource("1_potion_script")
+item_id = &"potion"
+display_name = "Potion"
+description = "Restores a small amount of health."
+max_stack = 5
