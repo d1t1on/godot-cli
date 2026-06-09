@@ -245,6 +245,17 @@ class ModuleInstallerUnitTests(unittest.TestCase):
             self.assertIn("interaction_id", agent)
             self.assertIn("SaveService", agent)
 
+    def test_readme_gameplay_module_commands_include_inventory_and_interaction_demos(self) -> None:
+        readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
+
+        self.assertIn(
+            "godot-playwright module add /tmp/agent-game inventory --demo",
+            readme,
+            "top-level README should keep the inventory demo command",
+        )
+        self.assertIn("godot-playwright module add /tmp/agent-game interaction", readme)
+        self.assertIn("godot-playwright module add /tmp/agent-game interaction --demo", readme)
+
     def test_save_service_rejects_non_finite_float_states(self) -> None:
         source_root = default_module_roots()[0]
         service_source = (source_root / "save_load" / "addons" / "save_load" / "save_service.gd").read_text(

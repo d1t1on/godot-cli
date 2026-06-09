@@ -140,6 +140,7 @@ Install reusable Godot gameplay modules for agent-built games:
 godot-playwright module list
 godot-playwright module add /tmp/agent-game save_load
 godot-playwright module add /tmp/agent-game inventory
+godot-playwright module add /tmp/agent-game inventory --demo
 godot-playwright module add /tmp/agent-game interaction
 godot-playwright module add /tmp/agent-game interaction --demo
 ```
