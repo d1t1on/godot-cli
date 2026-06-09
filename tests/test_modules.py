@@ -660,6 +660,99 @@ class SaveLoadModuleGodotTests(unittest.TestCase):
         self.assertEqual(result["b_value"], 0)
 
 
+@unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
+class InventoryModuleGodotTests(unittest.TestCase):
+    def test_installed_inventory_scripts_parse(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Inventory Parse Probe")
+            add_module(project, "inventory", demo=True)
+
+            report = check_project_scripts(
+                project,
+                ["res://addons/inventory", "res://scripts/inventory_demo"],
+                artifacts_dir=root / "artifacts",
+            )
+
+        self.assertTrue(report["ok"], report["diagnostics"])
+
+    def test_installed_inventory_demo_resources_are_valid(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Inventory Resource Probe")
+            add_module(project, "inventory", demo=True)
+
+            report = check_project_resources(
+                project,
+                ["res://scenes/inventory_demo", "res://resources/inventory_demo"],
+            )
+
+        self.assertTrue(report["ok"], report["diagnostics"])
+
+    def test_inventory_demo_round_trip_runs_in_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Inventory Runtime Probe")
+            add_module(project, "inventory", demo=True)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/inventory_demo/inventory_demo.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#InventoryDemo").call("run_inventory_demo")
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["potion_quantity"], 2)
+        self.assertEqual(result["key_quantity"], 1)
+        self.assertEqual(result["failed_key_add_ok"], False)
+        self.assertEqual(result["state_round_trip_quantity"], 2)
+        self.assertFalse(result["save_load_checked"])
+
+    def test_installed_inventory_demo_test_runs_without_main_scene_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Inventory Demo Test Probe")
+            add_module(project, "inventory", demo=True)
+
+            report = run_tests(
+                project,
+                [project / "tests" / "inventory_demo"],
+                artifacts_dir=root / "artifacts",
+                trace="off",
+                timeout=30,
+            )
+
+        self.assertEqual(report["failed"], 0, report["tests"])
+        self.assertEqual(report["passed"], 1)
+
+    def test_inventory_demo_integrates_with_save_load_when_installed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Inventory Save Load Probe")
+            add_module(project, "save_load")
+            add_module(project, "inventory", demo=True)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/inventory_demo/inventory_demo.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#InventoryDemo").call("run_inventory_demo")
+
+        self.assertTrue(result["ok"], result)
+        self.assertTrue(result["save_load_checked"], result)
+        self.assertEqual(result["save_load_coin_quantity"], 3)
+
+
 def _write_inventory_database_probe(project: Path) -> None:
     (project / "scripts" / "inventory_database_probe.gd").write_text(
         textwrap.dedent(

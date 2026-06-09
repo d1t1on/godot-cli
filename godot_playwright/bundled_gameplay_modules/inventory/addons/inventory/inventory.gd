@@ -176,8 +176,8 @@ func _validate_database(result: Dictionary) -> bool:
 
 func _parse_state_stacks(data: Dictionary, result: Dictionary) -> Array[Dictionary]:
 	var parsed_stacks: Array[Dictionary] = []
-	var saved_schema = data.get("schema_version", null)
-	if typeof(saved_schema) != TYPE_INT or int(saved_schema) != InventoryConstantsData.SCHEMA_VERSION:
+	var saved_schema := _parse_integer_field(data.get("schema_version", null), "schema_version", result)
+	if saved_schema != InventoryConstantsData.SCHEMA_VERSION:
 		InventoryResultData.add_error(result, "schema_version must be %d" % InventoryConstantsData.SCHEMA_VERSION)
 
 	var saved_capacity := _parse_integer_field(data.get("capacity", null), "capacity", result)
