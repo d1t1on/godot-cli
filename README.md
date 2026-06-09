@@ -140,6 +140,8 @@ Install reusable Godot gameplay modules for agent-built games:
 godot-playwright module list
 godot-playwright module add /tmp/agent-game save_load
 godot-playwright module add /tmp/agent-game save_load --demo
+godot-playwright module add /tmp/agent-game state_machine
+godot-playwright module add /tmp/agent-game state_machine --demo
 ```
 
 The first gameplay module is `save_load`, a JSON slot save/load service. The
@@ -147,6 +149,11 @@ installer copies `res://addons/save_load/`, registers the `SaveService` Autoload
 and can optionally install a tiny demo scene plus copied Python test. Gameplay
 objects participate by joining the `save_participants` group and implementing
 `save_state()` / `load_state(data)` with JSON-compatible state.
+
+The `state_machine` module adds a node-based finite state machine. The installer
+copies `res://addons/state_machine/` without registering an Autoload. Games add a
+`StateMachine` node with child state nodes, then call `transition_to()` or
+`request_transition()` to move between states.
 
 Probe runtime startup for script errors and warning/error log diagnostics:
 
