@@ -189,6 +189,20 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn("func get_stacks() -> Array", inventory_source)
         self.assertIn("func _validate_database(result: Dictionary) -> bool", inventory_source)
 
+    def test_inventory_source_defines_state_and_save_api(self) -> None:
+        source_root = default_module_roots()[0]
+        inventory_source = (source_root / "inventory" / "addons" / "inventory" / "inventory.gd").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("func get_state() -> Dictionary", inventory_source)
+        self.assertIn("func apply_state(data: Dictionary) -> Dictionary", inventory_source)
+        self.assertIn("func get_save_id() -> String", inventory_source)
+        self.assertIn("func save_state() -> Dictionary", inventory_source)
+        self.assertIn("func load_state(data: Dictionary) -> void", inventory_source)
+        self.assertIn("InventoryConstantsData.SCHEMA_VERSION", inventory_source)
+        self.assertIn("does not fit current capacity", inventory_source)
+
     def test_load_module_manifest_rejects_unknown_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             module_root = Path(tmp) / "modules"
@@ -524,6 +538,26 @@ class InventorySeedModuleGodotTests(unittest.TestCase):
 
         self.assertTrue(result["ok"], result)
 
+    def test_inventory_state_and_save_wrappers_run_in_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Inventory State Probe")
+            add_module(project, "inventory")
+            _write_inventory_state_probe(project)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/inventory_state_probe.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#InventoryStateProbe").call("run_probe")
+
+        self.assertTrue(result["ok"], result)
+
 
 @unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
 class SaveLoadModuleGodotTests(unittest.TestCase):
@@ -829,6 +863,153 @@ def _write_inventory_stack_probe(project: Path) -> None:
             [ext_resource type="Script" path="res://scripts/inventory_stack_probe.gd" id="1_probe_script"]
 
             [node name="InventoryStackProbe" type="Node"]
+            script = ExtResource("1_probe_script")
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_inventory_state_probe(project: Path) -> None:
+    (project / "scripts" / "inventory_state_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            const InventoryData := preload("res://addons/inventory/inventory.gd")
+            const InventoryItemDefinitionData := preload("res://addons/inventory/inventory_item_definition.gd")
+            const InventoryItemDatabaseData := preload("res://addons/inventory/inventory_item_database.gd")
+
+
+            func run_probe() -> Dictionary:
+                var errors: Array[String] = []
+                var inventory = InventoryData.new()
+                inventory.database = _make_database()
+                inventory.capacity = 2
+                inventory.save_id = &"state_probe_inventory"
+                add_child(inventory)
+
+                _assert_bool(inventory.is_in_group(&"save_participants"), "inventory with save_id should join save_participants", errors)
+                _assert_string("state_probe_inventory", inventory.get_save_id(), "save id", errors)
+
+                inventory.add_item("potion", 3)
+                inventory.add_item("key", 1)
+                var saved_state: Dictionary = inventory.get_state()
+                _assert_int(1, int(saved_state.get("schema_version", -1)), "state schema version", errors)
+                _assert_int(2, int(saved_state.get("capacity", -1)), "state capacity", errors)
+
+                inventory.clear()
+                inventory.add_item("potion", 1)
+                var apply_result: Dictionary = inventory.apply_state(saved_state)
+                _assert_bool(bool(apply_result.get("ok", false)), "apply_state should succeed", errors)
+                _assert_int(3, inventory.get_quantity("potion"), "potion quantity after apply_state", errors)
+                _assert_int(1, inventory.get_quantity("key"), "key quantity after apply_state", errors)
+
+                inventory.clear()
+                inventory.load_state(saved_state)
+                _assert_int(3, inventory.get_quantity("potion"), "potion quantity after load_state", errors)
+                _assert_int(1, inventory.get_quantity("key"), "key quantity after load_state", errors)
+                _assert_int(3, int(inventory.save_state()["stacks"][0]["quantity"]), "save_state wrapper quantity", errors)
+
+                var before_bad_state: Dictionary = inventory.get_state()
+                var bad_quantity_state := {
+                    "schema_version": 1,
+                    "capacity": 2,
+                    "stacks": [{"item_id": "potion", "quantity": 99}],
+                }
+                var bad_quantity_result: Dictionary = inventory.apply_state(bad_quantity_state)
+                _assert_bool(not bool(bad_quantity_result.get("ok", true)), "too-large stack should fail", errors)
+                _assert_contains(bad_quantity_result.get("errors", []), "exceeds max_stack", "too-large stack error", errors)
+                _assert_int(3, inventory.get_quantity("potion"), "bad state should not mutate potion", errors)
+                _assert_int(1, inventory.get_quantity("key"), "bad state should not mutate key", errors)
+
+                var too_many_stacks_state := {
+                    "schema_version": 1,
+                    "capacity": 2,
+                    "stacks": [
+                        {"item_id": "potion", "quantity": 1},
+                        {"item_id": "key", "quantity": 1},
+                        {"item_id": "coin", "quantity": 1},
+                    ],
+                }
+                var too_many_result: Dictionary = inventory.apply_state(too_many_stacks_state)
+                _assert_bool(not bool(too_many_result.get("ok", true)), "too many stacks should fail", errors)
+                _assert_contains(too_many_result.get("errors", []), "does not fit current capacity", "too many stacks error", errors)
+                _assert_int(3, inventory.get_quantity("potion"), "too many stacks should not mutate potion", errors)
+
+                var capacity_warning_state: Dictionary = before_bad_state.duplicate(true)
+                inventory.capacity = 3
+                var capacity_warning_result: Dictionary = inventory.apply_state(capacity_warning_state)
+                _assert_bool(bool(capacity_warning_result.get("ok", false)), "capacity mismatch that still fits should succeed", errors)
+                _assert_bool(not (capacity_warning_result.get("warnings", []) as Array).is_empty(), "capacity mismatch should warn", errors)
+
+                _assert_error(inventory.apply_state({"schema_version": 99, "capacity": 3, "stacks": []}), "schema_version", "schema mismatch", errors)
+                _assert_error(inventory.apply_state({"schema_version": 1, "capacity": 3, "stacks": [{"item_id": "missing", "quantity": 1}]}), "Unknown item_id", "unknown saved item", errors)
+                _assert_error(inventory.apply_state({"schema_version": 1, "capacity": 3, "stacks": [{"item_id": "potion", "quantity": 0}]}), "positive", "non-positive saved quantity", errors)
+
+                return {"ok": errors.is_empty(), "errors": errors}
+
+
+            func _make_database():
+                var potion = InventoryItemDefinitionData.new()
+                potion.item_id = &"potion"
+                potion.display_name = "Potion"
+                potion.max_stack = 5
+
+                var key = InventoryItemDefinitionData.new()
+                key.item_id = &"key"
+                key.display_name = "Key"
+                key.max_stack = 1
+
+                var coin = InventoryItemDefinitionData.new()
+                coin.item_id = &"coin"
+                coin.display_name = "Coin"
+                coin.max_stack = 99
+
+                var database = InventoryItemDatabaseData.new()
+                database.items.append(potion)
+                database.items.append(key)
+                database.items.append(coin)
+                return database
+
+
+            func _assert_error(result: Dictionary, expected_text: String, label: String, errors: Array[String]) -> void:
+                _assert_bool(not bool(result.get("ok", true)), "%s should fail" % label, errors)
+                _assert_contains(result.get("errors", []), expected_text, label, errors)
+
+
+            func _assert_bool(value: bool, message: String, errors: Array[String]) -> void:
+                if not value:
+                    errors.append(message)
+
+
+            func _assert_int(expected: int, actual: int, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %d, got %d" % [label, expected, actual])
+
+
+            func _assert_string(expected: String, actual: String, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %s, got %s" % [label, expected, actual])
+
+
+            func _assert_contains(messages: Array, needle: String, label: String, errors: Array[String]) -> void:
+                for message in messages:
+                    if String(message).contains(needle):
+                        return
+                errors.append("%s: missing %s in %s" % [label, needle, str(messages)])
+            """
+        ),
+        encoding="utf-8",
+    )
+    (project / "scenes" / "inventory_state_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://scripts/inventory_state_probe.gd" id="1_probe_script"]
+
+            [node name="InventoryStateProbe" type="Node"]
             script = ExtResource("1_probe_script")
             """
         ),
