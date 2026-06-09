@@ -336,6 +336,25 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn("class_name InventoryResult", result)
         self.assertIn("static func add_error", result)
 
+    def test_effects_source_defines_resource_helpers(self) -> None:
+        source_root = default_module_roots()[0]
+        effects_root = source_root / "effects" / "addons" / "effects"
+        definition = (effects_root / "effect_definition.gd").read_text(encoding="utf-8")
+        database = (effects_root / "effect_database.gd").read_text(encoding="utf-8")
+        result = (effects_root / "effect_result.gd").read_text(encoding="utf-8")
+        constants = (effects_root / "effect_constants.gd").read_text(encoding="utf-8")
+
+        self.assertIn("class_name EffectDefinition", definition)
+        self.assertIn("@export var effect_id: StringName", definition)
+        self.assertIn("@export var tags: Array[StringName] = []", definition)
+        self.assertIn('@export_enum("refresh", "stack", "ignore") var stack_mode: String = "refresh"', definition)
+        self.assertIn("class_name EffectDatabase", database)
+        self.assertIn("func get_effect(effect_id: String) -> Resource", database)
+        self.assertIn("func validate() -> Dictionary", database)
+        self.assertIn("class_name EffectResult", result)
+        self.assertIn("static func add_event", result)
+        self.assertIn('const STACK_REFRESH: String = "refresh"', constants)
+
     def test_inventory_source_defines_core_stack_api(self) -> None:
         source_root = default_module_roots()[0]
         inventory_source = (source_root / "inventory" / "addons" / "inventory" / "inventory.gd").read_text(
@@ -941,6 +960,29 @@ class InventoryModuleGodotTests(unittest.TestCase):
 
 
 @unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
+class EffectsModuleGodotTests(unittest.TestCase):
+    def test_effect_database_validation_handles_invalid_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Effects Database Probe")
+            add_module(project, "effects")
+            _write_effect_database_probe(project)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/effect_database_probe.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#EffectDatabaseProbe").call("run_probe")
+
+        self.assertTrue(result["ok"], result)
+
+
+@unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
 class StateMachineModuleGodotTests(unittest.TestCase):
     def test_installed_state_machine_scripts_parse(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1127,6 +1169,117 @@ def _write_inventory_database_probe(project: Path) -> None:
 
             [node name="InventoryDatabaseProbe" type="Node"]
             script = ExtResource("1_probe_script")
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_effect_database_probe(project: Path) -> None:
+    (project / "scripts" / "effect_database_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            const EffectDefinitionData := preload("res://addons/effects/effect_definition.gd")
+            const EffectDatabaseData := preload("res://addons/effects/effect_database.gd")
+
+
+            func run_probe() -> Dictionary:
+                var errors: Array[String] = []
+
+                var haste = EffectDefinitionData.new()
+                haste.effect_id = &"haste"
+                haste.display_name = "Haste"
+                haste.tags.append(&"movement")
+                haste.tags.append(&"buff")
+                haste.duration = 5.0
+                haste.tick_interval = 0.0
+                haste.stack_mode = "refresh"
+                haste.max_stacks = 1
+                haste.default_data = {"speed_multiplier": 1.25}
+                var valid_database = EffectDatabaseData.new()
+                valid_database.effects.append(haste)
+                var valid_result: Dictionary = valid_database.validate()
+                _assert_bool(bool(valid_result.get("ok", false)), "valid database should pass", errors)
+                _assert_bool(valid_database.has_effect("haste"), "valid database should find haste", errors)
+                var found_effect = valid_database.get_effect("haste")
+                _assert_bool(found_effect != null, "valid database should return haste", errors)
+                if found_effect != null:
+                    _assert_int(1, int(found_effect.max_stacks), "valid max stacks", errors)
+
+                var invalid_resource_database = EffectDatabaseData.new()
+                invalid_resource_database.effects.append(Resource.new())
+                var invalid_resource_result: Dictionary = invalid_resource_database.validate()
+                _assert_bool(not bool(invalid_resource_result.get("ok", true)), "plain Resource should fail validation", errors)
+                _assert_contains(invalid_resource_result.get("errors", []), "EffectDefinition", "plain Resource validation error", errors)
+
+                var whitespace_effect = EffectDefinitionData.new()
+                whitespace_effect.effect_id = &" haste "
+                var whitespace_database = EffectDatabaseData.new()
+                whitespace_database.effects.append(whitespace_effect)
+                var whitespace_result: Dictionary = whitespace_database.validate()
+                _assert_bool(not bool(whitespace_result.get("ok", true)), "whitespace effect_id should fail validation", errors)
+                _assert_contains(whitespace_result.get("errors", []), "whitespace", "whitespace validation error", errors)
+
+                var duplicate_effect = EffectDefinitionData.new()
+                duplicate_effect.effect_id = &"haste"
+                var duplicate_database = EffectDatabaseData.new()
+                duplicate_database.effects.append(haste)
+                duplicate_database.effects.append(duplicate_effect)
+                var duplicate_result: Dictionary = duplicate_database.validate()
+                _assert_bool(not bool(duplicate_result.get("ok", true)), "duplicate effect_id should fail validation", errors)
+                _assert_contains(duplicate_result.get("errors", []), "Duplicate effect_id", "duplicate validation error", errors)
+
+                var bad_stack_mode = EffectDefinitionData.new()
+                bad_stack_mode.effect_id = &"bad_mode"
+                bad_stack_mode.stack_mode = "combine"
+                var bad_stack_mode_database = EffectDatabaseData.new()
+                bad_stack_mode_database.effects.append(bad_stack_mode)
+                var bad_stack_mode_result: Dictionary = bad_stack_mode_database.validate()
+                _assert_bool(not bool(bad_stack_mode_result.get("ok", true)), "invalid stack_mode should fail validation", errors)
+                _assert_contains(bad_stack_mode_result.get("errors", []), "stack_mode", "stack_mode validation error", errors)
+
+                var bad_default_data = EffectDefinitionData.new()
+                bad_default_data.effect_id = &"bad_data"
+                bad_default_data.default_data = {"node": Node.new()}
+                var bad_data_database = EffectDatabaseData.new()
+                bad_data_database.effects.append(bad_default_data)
+                var bad_data_result: Dictionary = bad_data_database.validate()
+                _assert_bool(not bool(bad_data_result.get("ok", true)), "non-json default_data should fail validation", errors)
+                _assert_contains(bad_data_result.get("errors", []), "JSON-compatible", "default_data validation error", errors)
+
+                return {"ok": errors.is_empty(), "errors": errors}
+
+
+            func _assert_bool(value: bool, message: String, errors: Array[String]) -> void:
+                if not value:
+                    errors.append(message)
+
+
+            func _assert_int(expected: int, actual: int, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %d, got %d" % [label, expected, actual])
+
+
+            func _assert_contains(values: Array, text: String, label: String, errors: Array[String]) -> void:
+                for value in values:
+                    if String(value).contains(text):
+                        return
+                errors.append("%s: did not find %s in %s" % [label, text, str(values)])
+            """
+        ),
+        encoding="utf-8",
+    )
+    (project / "scenes" / "effect_database_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://scripts/effect_database_probe.gd" id="1_probe"]
+
+            [node name="EffectDatabaseProbe" type="Node"]
+            script = ExtResource("1_probe")
             """
         ),
         encoding="utf-8",
