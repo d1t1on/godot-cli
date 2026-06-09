@@ -561,6 +561,44 @@ def _write_module_fixture(module_root: Path) -> Path:
 
 
 @unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
+class InteractionSeedModuleGodotTests(unittest.TestCase):
+    def test_installed_interaction_seed_demo_scene_loads(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Interaction Seed Scene Probe")
+            add_module(project, "interaction", demo=True)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/interaction_demo/interaction_demo.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            report = probe_project(project, frames=2, artifacts_dir=root / "artifacts")
+
+        self.assertTrue(report["ok"], report["log_summary"]["tail"])
+
+    def test_installed_interaction_seed_demo_test_runs_without_main_scene_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Interaction Seed Demo Test Probe")
+            add_module(project, "interaction", demo=True)
+
+            report = run_tests(
+                project,
+                [project / "tests" / "interaction_demo"],
+                artifacts_dir=root / "artifacts",
+                trace="off",
+                timeout=30,
+            )
+
+        self.assertEqual(report["failed"], 0, report["tests"])
+        self.assertEqual(report["passed"], 1)
+
+
+@unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
 class InventorySeedModuleGodotTests(unittest.TestCase):
     def test_installed_inventory_seed_demo_scene_loads(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
