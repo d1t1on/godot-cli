@@ -504,6 +504,26 @@ class InventorySeedModuleGodotTests(unittest.TestCase):
 
         self.assertTrue(result["ok"], result)
 
+    def test_inventory_core_stack_operations_run_in_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Inventory Stack Probe")
+            add_module(project, "inventory")
+            _write_inventory_stack_probe(project)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/inventory_stack_probe.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#InventoryStackProbe").call("run_probe")
+
+        self.assertTrue(result["ok"], result)
+
 
 @unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
 class SaveLoadModuleGodotTests(unittest.TestCase):
@@ -694,6 +714,121 @@ def _write_inventory_database_probe(project: Path) -> None:
             [ext_resource type="Script" path="res://scripts/inventory_database_probe.gd" id="1_probe_script"]
 
             [node name="InventoryDatabaseProbe" type="Node"]
+            script = ExtResource("1_probe_script")
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_inventory_stack_probe(project: Path) -> None:
+    (project / "scripts" / "inventory_stack_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            const InventoryData := preload("res://addons/inventory/inventory.gd")
+            const InventoryItemDefinitionData := preload("res://addons/inventory/inventory_item_definition.gd")
+            const InventoryItemDatabaseData := preload("res://addons/inventory/inventory_item_database.gd")
+
+
+            func run_probe() -> Dictionary:
+                var errors: Array[String] = []
+                var inventory = InventoryData.new()
+                add_child(inventory)
+                inventory.database = _make_database()
+                inventory.capacity = 2
+
+                var add_result: Dictionary = inventory.add_item("potion", 12)
+                _assert_bool(bool(add_result.get("ok", false)), "partial add should still be ok", errors)
+                _assert_int(10, int(add_result.get("added", -1)), "partial add added count", errors)
+                _assert_int(2, int(add_result.get("remainder", -1)), "partial add remainder", errors)
+                _assert_bool(not (add_result.get("warnings", []) as Array).is_empty(), "partial add should warn", errors)
+                _assert_int(10, inventory.get_quantity("potion"), "potion quantity after partial add", errors)
+                _assert_int(2, inventory.get_stacks().size(), "stack count after partial add", errors)
+
+                var no_room_result: Dictionary = inventory.add_item("key", 1)
+                _assert_bool(not bool(no_room_result.get("ok", true)), "no-room add should fail", errors)
+                _assert_int(0, inventory.get_quantity("key"), "key quantity after no-room add", errors)
+                _assert_int(10, inventory.get_quantity("potion"), "potion quantity after no-room add", errors)
+
+                var insufficient_remove: Dictionary = inventory.remove_item("potion", 11)
+                _assert_bool(not bool(insufficient_remove.get("ok", true)), "insufficient remove should fail", errors)
+                _assert_int(10, inventory.get_quantity("potion"), "potion quantity after insufficient remove", errors)
+
+                var remove_result: Dictionary = inventory.remove_item("potion", 6)
+                _assert_bool(bool(remove_result.get("ok", false)), "remove should succeed", errors)
+                _assert_int(6, int(remove_result.get("removed", -1)), "removed count", errors)
+                _assert_int(4, inventory.get_quantity("potion"), "potion quantity after remove", errors)
+                _assert_int(1, inventory.get_stacks().size(), "stack count after remove", errors)
+
+                var copied_stacks: Array = inventory.get_stacks()
+                copied_stacks[0]["quantity"] = 999
+                _assert_int(4, inventory.get_quantity("potion"), "get_stacks should return copies", errors)
+
+                _assert_error(inventory.add_item("potion", 0), "quantity", "zero quantity add", errors)
+                _assert_error(inventory.add_item(" ", 1), "item_id", "empty item_id add", errors)
+                _assert_error(inventory.add_item("missing", 1), "Unknown item_id", "unknown item add", errors)
+
+                var no_database_inventory = InventoryData.new()
+                _assert_error(no_database_inventory.add_item("potion", 1), "database must be assigned", "missing database", errors)
+
+                var invalid_database_inventory = InventoryData.new()
+                invalid_database_inventory.database = Resource.new()
+                _assert_error(invalid_database_inventory.add_item("potion", 1), "InventoryItemDatabase", "plain Resource database", errors)
+
+                return {"ok": errors.is_empty(), "errors": errors}
+
+
+            func _make_database():
+                var potion = InventoryItemDefinitionData.new()
+                potion.item_id = &"potion"
+                potion.display_name = "Potion"
+                potion.max_stack = 5
+
+                var key = InventoryItemDefinitionData.new()
+                key.item_id = &"key"
+                key.display_name = "Key"
+                key.max_stack = 1
+
+                var database = InventoryItemDatabaseData.new()
+                database.items.append(potion)
+                database.items.append(key)
+                return database
+
+
+            func _assert_error(result: Dictionary, expected_text: String, label: String, errors: Array[String]) -> void:
+                _assert_bool(not bool(result.get("ok", true)), "%s should fail" % label, errors)
+                _assert_contains(result.get("errors", []), expected_text, label, errors)
+
+
+            func _assert_bool(value: bool, message: String, errors: Array[String]) -> void:
+                if not value:
+                    errors.append(message)
+
+
+            func _assert_int(expected: int, actual: int, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %d, got %d" % [label, expected, actual])
+
+
+            func _assert_contains(messages: Array, needle: String, label: String, errors: Array[String]) -> void:
+                for message in messages:
+                    if String(message).contains(needle):
+                        return
+                errors.append("%s: missing %s in %s" % [label, needle, str(messages)])
+            """
+        ),
+        encoding="utf-8",
+    )
+    (project / "scenes" / "inventory_stack_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://scripts/inventory_stack_probe.gd" id="1_probe_script"]
+
+            [node name="InventoryStackProbe" type="Node"]
             script = ExtResource("1_probe_script")
             """
         ),
