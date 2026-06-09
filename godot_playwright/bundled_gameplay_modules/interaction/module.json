@@ -1,0 +1,24 @@
+{
+  "name": "interaction",
+  "version": "0.1.0",
+  "display_name": "Interaction",
+  "description": "Range-based interaction components for Godot projects.",
+  "godot_version": ">=4.6",
+  "copy": [
+    {"from": "addons/interaction", "to": "addons/interaction"}
+  ],
+  "autoloads": [],
+  "demo": {
+    "copy": [
+      {"from": "demo/scenes", "to": "scenes/interaction_demo"},
+      {"from": "demo/scripts", "to": "scripts/interaction_demo"},
+      {"from": "tests", "to": "tests/interaction_demo"}
+    ]
+  },
+  "validation": {
+    "commands": [
+      "godot-playwright check-scripts /path/to/project res://addons/interaction --exclude addons/godot_playwright/**",
+      "godot-playwright check-resources /path/to/project res://addons/interaction --exclude addons/godot_playwright/**"
+    ]
+  }
+}

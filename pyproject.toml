@@ -32,6 +32,11 @@ godot_playwright = [
   "bundled_gameplay_modules/inventory/demo/scripts/*",
   "bundled_gameplay_modules/inventory/demo/resources/*",
   "bundled_gameplay_modules/inventory/tests/*",
+  "bundled_gameplay_modules/interaction/*",
+  "bundled_gameplay_modules/interaction/addons/interaction/*",
+  "bundled_gameplay_modules/interaction/demo/scenes/*",
+  "bundled_gameplay_modules/interaction/demo/scripts/*",
+  "bundled_gameplay_modules/interaction/tests/*",
 ]
 
 [tool.pytest.ini_options]
