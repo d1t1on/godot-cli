@@ -285,6 +285,28 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn("InventoryConstantsData.SCHEMA_VERSION", inventory_source)
         self.assertIn("does not fit current capacity", inventory_source)
 
+    def test_interaction_source_defines_core_api(self) -> None:
+        source_root = default_module_roots()[0]
+        interaction_root = source_root / "interaction" / "addons" / "interaction"
+        interactable = (interaction_root / "interactable.gd").read_text(encoding="utf-8")
+        interactor_2d = (interaction_root / "interactor_2d.gd").read_text(encoding="utf-8")
+        interactor_3d = (interaction_root / "interactor_3d.gd").read_text(encoding="utf-8")
+        result = (interaction_root / "interaction_result.gd").read_text(encoding="utf-8")
+
+        self.assertIn("class_name Interactable", interactable)
+        self.assertIn("@export var interaction_id: StringName", interactable)
+        self.assertIn('prompt: String = "Interact"', interactable)
+        self.assertIn("func can_interact(actor: Node, data: Dictionary = {}) -> bool", interactable)
+        self.assertIn("func interact(actor: Node, data: Dictionary = {}) -> Dictionary", interactable)
+        self.assertIn("func get_state() -> Dictionary", interactable)
+        self.assertIn("func apply_state(data: Dictionary) -> Dictionary", interactable)
+        self.assertIn("class_name Interactor2D", interactor_2d)
+        self.assertIn("extends Area2D", interactor_2d)
+        self.assertIn("class_name Interactor3D", interactor_3d)
+        self.assertIn("extends Area3D", interactor_3d)
+        self.assertIn("class_name InteractionResult", result)
+        self.assertIn("static func add_error", result)
+
     def test_load_module_manifest_rejects_unknown_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             module_root = Path(tmp) / "modules"
@@ -597,6 +619,26 @@ class InteractionSeedModuleGodotTests(unittest.TestCase):
         self.assertEqual(report["failed"], 0, report["tests"])
         self.assertEqual(report["passed"], 1)
 
+    def test_interactable_state_and_default_interaction_run_in_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Interaction Interactable Probe")
+            add_module(project, "interaction")
+            _write_interactable_probe(project)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/interactable_probe.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#InteractableProbe").call("run_probe")
+
+        self.assertTrue(result["ok"], result)
+
 
 @unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
 class InventorySeedModuleGodotTests(unittest.TestCase):
@@ -874,6 +916,101 @@ class InventoryModuleGodotTests(unittest.TestCase):
         self.assertEqual(result["potion_quantity"], 2)
         self.assertEqual(result["key_quantity"], 1)
         self.assertEqual(result["state_round_trip_quantity"], 2)
+
+
+def _write_interactable_probe(project: Path) -> None:
+    (project / "scripts" / "interactable_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            const InteractableData := preload("res://addons/interaction/interactable.gd")
+
+
+            func run_probe() -> Dictionary:
+                var errors: Array[String] = []
+                var parent := Node.new()
+                parent.name = "Door"
+                add_child(parent)
+                var interactable = InteractableData.new()
+                interactable.name = "Interactable"
+                parent.add_child(interactable)
+
+                _assert_string("Door", interactable.get_interaction_id(), "fallback interaction id", errors)
+                _assert_string("Interact", interactable.get_interaction_prompt(self), "default prompt", errors)
+                _assert_bool(interactable.can_interact(self), "enabled interactable can interact", errors)
+
+                interactable.interaction_id = &"door_01"
+                interactable.prompt = "Open"
+                interactable.priority = 10
+                var result: Dictionary = interactable.interact(self)
+                _assert_bool(bool(result.get("ok", false)), "default interaction succeeds", errors)
+                _assert_string("door_01", String(result.get("interaction_id", "")), "result interaction id", errors)
+                _assert_string("Door", String(result.get("target", "")), "result target", errors)
+
+                var saved_state: Dictionary = interactable.get_state()
+                _assert_int(1, int(saved_state.get("schema_version", -1)), "state schema", errors)
+                _assert_string("door_01", String(saved_state.get("interaction_id", "")), "state id", errors)
+                interactable.prompt = "Changed"
+                interactable.priority = 0
+                interactable.enabled = false
+                var apply_result: Dictionary = interactable.apply_state(saved_state)
+                _assert_bool(bool(apply_result.get("ok", false)), "apply_state succeeds", errors)
+                _assert_string("Open", interactable.prompt, "restored prompt", errors)
+                _assert_int(10, interactable.priority, "restored priority", errors)
+                _assert_bool(interactable.enabled, "restored enabled", errors)
+
+                var bad_state := {"schema_version": 1, "interaction_id": "door_01", "enabled": "yes", "prompt": "Open", "priority": 10}
+                var bad_result: Dictionary = interactable.apply_state(bad_state)
+                _assert_bool(not bool(bad_result.get("ok", true)), "bad state should fail", errors)
+                _assert_contains(bad_result.get("errors", []), "enabled", "bad enabled error", errors)
+                _assert_bool(interactable.enabled, "bad state should not mutate enabled", errors)
+
+                interactable.enabled = false
+                var disabled_result: Dictionary = interactable.interact(self)
+                _assert_bool(not bool(disabled_result.get("ok", true)), "disabled interaction should fail", errors)
+                _assert_contains(disabled_result.get("errors", []), "disabled", "disabled error", errors)
+
+                return {"ok": errors.is_empty(), "errors": errors}
+
+
+            func _assert_bool(value: bool, message: String, errors: Array[String]) -> void:
+                if not value:
+                    errors.append(message)
+
+
+            func _assert_int(expected: int, actual: int, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %d, got %d" % [label, expected, actual])
+
+
+            func _assert_string(expected: String, actual: String, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %s, got %s" % [label, expected, actual])
+
+
+            func _assert_contains(messages: Array, needle: String, label: String, errors: Array[String]) -> void:
+                for message in messages:
+                    if String(message).contains(needle):
+                        return
+                errors.append("%s: missing %s in %s" % [label, needle, str(messages)])
+            """
+        ),
+        encoding="utf-8",
+    )
+    (project / "scenes" / "interactable_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://scripts/interactable_probe.gd" id="1_probe_script"]
+
+            [node name="InteractableProbe" type="Node"]
+            script = ExtResource("1_probe_script")
+            """
+        ),
+        encoding="utf-8",
+    )
 
 
 def _write_inventory_database_probe(project: Path) -> None:
