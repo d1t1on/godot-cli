@@ -1,1 +1,11 @@
-[gd_resource type="Resource" format=3]
+[gd_resource type="Resource" script_class="EffectDatabase" load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://addons/effects/effect_database.gd" id="1_database_script"]
+[ext_resource type="Resource" path="res://resources/effects_demo/haste.tres" id="2_haste"]
+[ext_resource type="Resource" path="res://resources/effects_demo/poison.tres" id="3_poison"]
+[ext_resource type="Resource" path="res://resources/effects_demo/shielded.tres" id="4_shielded"]
+[ext_resource type="Resource" path="res://resources/effects_demo/stunned.tres" id="5_stunned"]
+
+[resource]
+script = ExtResource("1_database_script")
+effects = Array[Resource]([ExtResource("2_haste"), ExtResource("3_poison"), ExtResource("4_shielded"), ExtResource("5_stunned")])

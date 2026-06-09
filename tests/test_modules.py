@@ -1031,6 +1031,96 @@ class EffectsModuleGodotTests(unittest.TestCase):
         self.assertFalse(result["unknown_result"]["ok"], result["unknown_result"])
         self.assertFalse(result["negative_delta_event"]["ok"], result["negative_delta_event"])
 
+    def test_installed_effects_scripts_parse(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Effects Parse Probe")
+            add_module(project, "effects", demo=True)
+
+            report = check_project_scripts(
+                project,
+                ["res://addons/effects", "res://scripts/effects_demo"],
+                artifacts_dir=root / "artifacts",
+            )
+
+        self.assertTrue(report["ok"], report["diagnostics"])
+
+    def test_installed_effects_demo_resources_are_valid(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Effects Resource Probe")
+            add_module(project, "effects", demo=True)
+
+            report = check_project_resources(
+                project,
+                ["res://scenes/effects_demo", "res://resources/effects_demo"],
+            )
+
+        self.assertTrue(report["ok"], report["diagnostics"])
+
+    def test_effects_demo_runs_in_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Effects Demo Probe")
+            add_module(project, "effects", demo=True)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/effects_demo/effects_demo.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#EffectsDemo").call("run_effects_demo")
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["poison_stack_count"], 3)
+        self.assertGreaterEqual(result["poison_tick_count"], 2)
+        self.assertFalse(result["has_haste_after_expire"])
+        self.assertTrue(result["has_shielded_after_update"])
+        self.assertFalse(result["save_load_checked"])
+
+    def test_installed_effects_demo_test_runs_without_main_scene_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Effects Demo Test Probe")
+            add_module(project, "effects", demo=True)
+
+            report = run_tests(
+                project,
+                [project / "tests" / "effects_demo"],
+                artifacts_dir=root / "artifacts",
+                trace="off",
+                timeout=30,
+            )
+
+        self.assertEqual(report["failed"], 0, report["tests"])
+        self.assertEqual(report["passed"], 1)
+
+    def test_effects_demo_integrates_with_save_load_when_installed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Effects Save Load Probe")
+            add_module(project, "save_load")
+            add_module(project, "effects", demo=True)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/effects_demo/effects_demo.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#EffectsDemo").call("run_effects_demo")
+
+        self.assertTrue(result["ok"], result)
+        self.assertTrue(result["save_load_checked"], result)
+        self.assertEqual(result["save_load_poison_stacks"], 2)
+
 
 @unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
 class StateMachineModuleGodotTests(unittest.TestCase):
