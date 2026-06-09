@@ -39,11 +39,58 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertEqual(save_load["version"], "0.1.0")
         self.assertEqual(save_load["godot_version"], ">=4.6")
 
+    def test_repository_state_machine_module_is_discoverable(self) -> None:
+        modules = list_modules()
+        state_machine = next(module for module in modules if module["name"] == "state_machine")
+        self.assertEqual(state_machine["version"], "0.1.0")
+        self.assertEqual(state_machine["godot_version"], ">=4.6")
+        self.assertEqual(state_machine["autoloads"], [])
+
+    def test_add_state_machine_module_copies_files_without_autoload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = _write_project(root / "project")
+
+            report = add_module(project, "state_machine")
+
+            self.assertTrue(report["ok"], report)
+            self.assertFalse(report["demo"])
+            self.assertEqual(report["module"], "state_machine")
+            self.assertEqual(report["autoloads"], [])
+            self.assertTrue((project / "addons" / "state_machine" / "state_machine.gd").exists())
+            self.assertTrue((project / "addons" / "state_machine" / "state.gd").exists())
+            project_text = (project / "project.godot").read_text(encoding="utf-8")
+            self.assertNotIn("StateMachineService", project_text)
+            copied_targets = {entry["target"] for entry in report["copied"]}
+            self.assertIn("res://addons/state_machine/state_machine.gd", copied_targets)
+
+    def test_add_state_machine_module_with_demo_copies_demo_assets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = _write_project(root / "project")
+
+            report = add_module(project, "state_machine", demo=True)
+
+            self.assertTrue(report["ok"], report)
+            self.assertTrue(report["demo"])
+            self.assertTrue((project / "scenes" / "state_machine_demo" / "state_machine_demo.tscn").exists())
+            self.assertTrue((project / "scripts" / "state_machine_demo" / "state_machine_demo.gd").exists())
+            self.assertTrue((project / "tests" / "state_machine_demo" / "test_state_machine_demo.py").exists())
+
     def test_packaged_save_load_module_mirror_exists(self) -> None:
         bundled_root = default_module_roots()[1]
         manifest = load_module_manifest("save_load", module_root=bundled_root)
         self.assertEqual(manifest["name"], "save_load")
         self.assertTrue((bundled_root / "save_load" / "addons" / "save_load" / "save_service.gd").exists())
+
+    def test_packaged_state_machine_module_mirror_exists(self) -> None:
+        bundled_root = default_module_roots()[1]
+        manifest = load_module_manifest("state_machine", module_root=bundled_root)
+        self.assertEqual(manifest["name"], "state_machine")
+        self.assertEqual(manifest["autoloads"], [])
+        self.assertTrue(
+            (bundled_root / "state_machine" / "addons" / "state_machine" / "state_machine.gd").exists()
+        )
 
     def test_pyproject_includes_bundled_gameplay_module_data(self) -> None:
         pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8")
@@ -53,11 +100,31 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn('"bundled_gameplay_modules/save_load/demo/scenes/*"', pyproject)
         self.assertIn('"bundled_gameplay_modules/save_load/demo/scripts/*"', pyproject)
         self.assertIn('"bundled_gameplay_modules/save_load/tests/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/state_machine/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/state_machine/addons/state_machine/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/state_machine/demo/scenes/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/state_machine/demo/scripts/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/state_machine/tests/*"', pyproject)
 
     def test_source_and_packaged_save_load_trees_are_identical(self) -> None:
         source_root, bundled_root = default_module_roots()
         source = source_root / "save_load"
         bundled = bundled_root / "save_load"
+        source_files = sorted(path.relative_to(source) for path in source.rglob("*") if path.is_file())
+        bundled_files = sorted(path.relative_to(bundled) for path in bundled.rglob("*") if path.is_file())
+
+        self.assertEqual([path.as_posix() for path in source_files], [path.as_posix() for path in bundled_files])
+        for relative_path in source_files:
+            self.assertEqual(
+                (source / relative_path).read_bytes(),
+                (bundled / relative_path).read_bytes(),
+                relative_path.as_posix(),
+            )
+
+    def test_source_and_packaged_state_machine_trees_are_identical(self) -> None:
+        source_root, bundled_root = default_module_roots()
+        source = source_root / "state_machine"
+        bundled = bundled_root / "state_machine"
         source_files = sorted(path.relative_to(source) for path in source.rglob("*") if path.is_file())
         bundled_files = sorted(path.relative_to(bundled) for path in bundled.rglob("*") if path.is_file())
 
