@@ -6,7 +6,7 @@ const StateMachineResultData := preload("res://addons/state_machine/state_machin
 
 signal state_started(current_state_id: String, data: Dictionary)
 signal state_changed(previous_state_id: String, current_state_id: String, data: Dictionary)
-signal transition_failed(previous_state_id: String, target_state_id: String, result: Dictionary)
+signal transition_failed(from_state_id: String, to_state_id: String, result: Dictionary)
 
 @export var initial_state_id: StringName
 @export var auto_start: bool = true
@@ -42,9 +42,9 @@ func _input(event: InputEvent) -> void:
         _current_state.call("handle_input", event)
 
 
-func start(start_state_id: String = "", data: Dictionary = {}) -> Dictionary:
+func start(initial_state_id: String = "", data: Dictionary = {}) -> Dictionary:
     _ensure_discovered()
-    var target_state_id := _resolve_start_state_id(start_state_id)
+    var target_state_id := _resolve_start_state_id(initial_state_id)
     var result := StateMachineResultData.make(true, "", target_state_id)
     if _transitioning:
         StateMachineResultData.add_error(result, "StateMachine is already transitioning")
@@ -84,9 +84,10 @@ func start(start_state_id: String = "", data: Dictionary = {}) -> Dictionary:
     return result
 
 
-func transition_to(target_state_id: String, data: Dictionary = {}) -> Dictionary:
+func transition_to(state_id: String, data: Dictionary = {}) -> Dictionary:
     _ensure_discovered()
     var from_state_id := _current_state_id if _started else ""
+    var target_state_id := state_id
     var result := StateMachineResultData.make(true, from_state_id, target_state_id)
     if _transitioning:
         StateMachineResultData.add_error(result, "StateMachine is already transitioning")
@@ -136,8 +137,8 @@ func transition_to(target_state_id: String, data: Dictionary = {}) -> Dictionary
     return result
 
 
-func request_transition(target_state_id: String, data: Dictionary = {}) -> Dictionary:
-    return transition_to(target_state_id, data)
+func request_transition(state_id: String, data: Dictionary = {}) -> Dictionary:
+    return transition_to(state_id, data)
 
 
 func get_current_state_id() -> String:
