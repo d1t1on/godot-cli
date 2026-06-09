@@ -11,3 +11,5 @@ def test_effects_demo_round_trip(godot):
     assert result["has_shielded_after_update"] is True
     assert result["unknown_result"]["ok"] is False
     assert result["bad_stacks_result"]["ok"] is False
+    assert result["missing_database_result"]["ok"] is False
+    assert result["malformed_state_result"]["ok"] is False

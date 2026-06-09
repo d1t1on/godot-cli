@@ -304,7 +304,7 @@ func _validate_database(result: Dictionary) -> bool:
 func _parse_state_effects(data: Dictionary, result: Dictionary) -> Array[Dictionary]:
     var parsed_effects: Array[Dictionary] = []
     var schema_version = data.get("schema_version", null)
-    if typeof(schema_version) != TYPE_INT or int(schema_version) != EffectConstantsData.SCHEMA_VERSION:
+    if not _is_supported_schema_version(schema_version):
         EffectResultData.add_error(result, "schema_version must be %d" % EffectConstantsData.SCHEMA_VERSION)
     var raw_effects = data.get("effects", null)
     if not (raw_effects is Array):
@@ -352,6 +352,14 @@ func _parse_state_effects(data: Dictionary, result: Dictionary) -> Array[Diction
         var tick_elapsed := _parse_float(effect.get("tick_elapsed", null), "tick_elapsed", result)
         if remaining_duration < -1.0:
             EffectResultData.add_error(result, "effects[%d].remaining_duration must be -1 or greater" % index)
+        var duration := float(definition.duration)
+        if duration > 0.0:
+            if remaining_duration <= 0.0:
+                EffectResultData.add_error(result, "effects[%d].remaining_duration must be positive for timed effect_id: %s" % [index, normalized])
+            elif remaining_duration > duration:
+                EffectResultData.add_error(result, "effects[%d].remaining_duration exceeds duration for effect_id: %s" % [index, normalized])
+        elif remaining_duration != -1.0:
+            EffectResultData.add_error(result, "effects[%d].remaining_duration must be -1 for permanent effect_id: %s" % [index, normalized])
         if elapsed_time < 0.0:
             EffectResultData.add_error(result, "effects[%d].elapsed_time must be zero or greater" % index)
         if tick_elapsed < 0.0:
@@ -377,6 +385,15 @@ func _parse_state_effects(data: Dictionary, result: Dictionary) -> Array[Diction
                 "data": (effect_data as Dictionary).duplicate(true),
             })
     return parsed_effects
+
+
+func _is_supported_schema_version(value: Variant) -> bool:
+    if typeof(value) == TYPE_INT:
+        return int(value) == EffectConstantsData.SCHEMA_VERSION
+    if typeof(value) == TYPE_FLOAT:
+        var number := float(value)
+        return not is_nan(number) and not is_inf(number) and number == floor(number) and int(number) == EffectConstantsData.SCHEMA_VERSION
+    return false
 
 
 func _parse_int(value: Variant, field_name: String, result: Dictionary) -> int:

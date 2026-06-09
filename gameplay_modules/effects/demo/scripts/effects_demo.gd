@@ -1,7 +1,5 @@
 extends Node
 
-const SAVE_GROUP: StringName = &"save_participants"
-
 @onready var effects: Node = $EffectContainer
 
 
@@ -50,9 +48,16 @@ func run_effects_demo() -> Dictionary:
     var unknown_result: Dictionary = effects.add_effect("missing", self, 1)
     var bad_stacks_result: Dictionary = effects.add_effect("haste", self, 0)
     var negative_delta_events: Array = effects.update_effects(-1.0)
+    var original_database = effects.get("database")
+    effects.set("database", null)
+    var missing_database_result: Dictionary = effects.add_effect("haste", self, 1)
+    effects.set("database", original_database)
+    var malformed_state_result: Dictionary = effects.apply_state({"schema_version": 1, "effects": "not an array"})
     _assert_bool(not bool(unknown_result.get("ok", true)), "unknown effect should fail", errors)
     _assert_bool(not bool(bad_stacks_result.get("ok", true)), "zero stacks should fail", errors)
     _assert_bool(not bool(negative_delta_events[0].get("ok", true)), "negative delta should fail", errors)
+    _assert_bool(not bool(missing_database_result.get("ok", true)), "missing database should fail", errors)
+    _assert_bool(not bool(malformed_state_result.get("ok", true)), "malformed state should fail", errors)
 
     var save_load_checked := false
     var save_load_poison_stacks := -1
@@ -62,16 +67,10 @@ func run_effects_demo() -> Dictionary:
         save_service.delete_slot("effects_demo_slot")
         effects.clear_effects()
         effects.add_effect("poison", self, 2)
-        if effects.is_in_group(SAVE_GROUP):
-            effects.remove_from_group(SAVE_GROUP)
-        if not is_in_group(SAVE_GROUP):
-            add_to_group(SAVE_GROUP)
         var save_result: Dictionary = save_service.save_slot("effects_demo_slot")
         effects.clear_effects()
         var load_result: Dictionary = save_service.load_slot("effects_demo_slot")
         var delete_result: Dictionary = save_service.delete_slot("effects_demo_slot")
-        remove_from_group(SAVE_GROUP)
-        effects.add_to_group(SAVE_GROUP)
         _assert_bool(bool(save_result.get("ok", false)), "SaveService save should succeed", errors)
         _assert_bool(bool(load_result.get("ok", false)), "SaveService load should succeed", errors)
         _assert_bool(bool(delete_result.get("ok", false)), "SaveService delete should succeed", errors)
@@ -93,29 +92,11 @@ func run_effects_demo() -> Dictionary:
         "unknown_result": unknown_result,
         "bad_stacks_result": bad_stacks_result,
         "negative_delta_event": negative_delta_events[0],
+        "missing_database_result": missing_database_result,
+        "malformed_state_result": malformed_state_result,
         "save_load_checked": save_load_checked,
         "save_load_poison_stacks": save_load_poison_stacks,
     }
-
-
-func get_save_id() -> String:
-    return String(effects.get("save_id"))
-
-
-func save_state() -> Dictionary:
-    return effects.get_state()
-
-
-func load_state(data: Dictionary) -> void:
-    effects.apply_state(_normalize_effect_state(data))
-
-
-func _normalize_effect_state(data: Dictionary) -> Dictionary:
-    var normalized: Dictionary = data.duplicate(true)
-    var schema_version = normalized.get("schema_version", null)
-    if typeof(schema_version) == TYPE_INT or typeof(schema_version) == TYPE_FLOAT:
-        normalized["schema_version"] = int(schema_version)
-    return normalized
 
 
 func _count_events(events: Array, event_type: String) -> int:

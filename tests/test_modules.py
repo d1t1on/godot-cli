@@ -1044,6 +1044,10 @@ class EffectsModuleGodotTests(unittest.TestCase):
         self.assertEqual(result["round_trip_poison_stacks"], 2)
         self.assertFalse(result["unknown_result"]["ok"], result["unknown_result"])
         self.assertFalse(result["negative_delta_event"]["ok"], result["negative_delta_event"])
+        self.assertTrue(result["float_schema_result"]["ok"], result["float_schema_result"])
+        self.assertFalse(result["timed_permanent_state"]["ok"], result["timed_permanent_state"])
+        self.assertFalse(result["permanent_timed_state"]["ok"], result["permanent_timed_state"])
+        self.assertFalse(result["too_long_timed_state"]["ok"], result["too_long_timed_state"])
 
     def test_installed_effects_scripts_parse(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1094,6 +1098,8 @@ class EffectsModuleGodotTests(unittest.TestCase):
         self.assertGreaterEqual(result["poison_tick_count"], 2)
         self.assertFalse(result["has_haste_after_expire"])
         self.assertTrue(result["has_shielded_after_update"])
+        self.assertFalse(result["missing_database_result"]["ok"], result["missing_database_result"])
+        self.assertFalse(result["malformed_state_result"]["ok"], result["malformed_state_result"])
         self.assertFalse(result["save_load_checked"])
 
     def test_installed_effects_demo_test_runs_without_main_scene_override(self) -> None:
@@ -1644,6 +1650,13 @@ def _write_effect_container_probe(project: Path) -> None:
                 _assert_int(2, effects.get_stack_count("poison"), "poison stack count after state round-trip", errors)
                 _assert_bool(not effects.has_effect("haste"), "state round-trip should replace active effects", errors)
 
+                var float_schema_state: Dictionary = saved_state.duplicate(true)
+                float_schema_state["schema_version"] = 1.0
+                effects.clear_effects()
+                var float_schema_result: Dictionary = effects.apply_state(float_schema_state)
+                _assert_bool(bool(float_schema_result.get("ok", false)), "integral float schema_version should restore state", errors)
+                _assert_int(2, effects.get_stack_count("poison"), "poison stack count after float schema_version state", errors)
+
                 var remove_one: Dictionary = effects.remove_effect("poison", 1)
                 _assert_bool(bool(remove_one.get("ok", false)), "partial remove should succeed", errors)
                 _assert_int(1, effects.get_stack_count("poison"), "poison stack count after partial remove", errors)
@@ -1673,6 +1686,12 @@ def _write_effect_container_probe(project: Path) -> None:
                 _assert_bool(not bool(excessive_tick_state.get("ok", true)), "excessive saved tick_elapsed should fail", errors)
                 var no_tick_elapsed_state: Dictionary = effects.apply_state({"schema_version": 1, "effects": [{"effect_id": "haste", "stacks": 1, "remaining_duration": 1.0, "elapsed_time": 0.0, "tick_elapsed": 1.0, "data": {}}]})
                 _assert_bool(not bool(no_tick_elapsed_state.get("ok", true)), "no-tick effect saved tick_elapsed should fail", errors)
+                var timed_permanent_state: Dictionary = effects.apply_state({"schema_version": 1, "effects": [{"effect_id": "poison", "stacks": 1, "remaining_duration": -1.0, "elapsed_time": 0.0, "tick_elapsed": 0.0, "data": {}}]})
+                _assert_bool(not bool(timed_permanent_state.get("ok", true)), "timed effect saved as permanent should fail", errors)
+                var permanent_timed_state: Dictionary = effects.apply_state({"schema_version": 1, "effects": [{"effect_id": "shielded", "stacks": 1, "remaining_duration": 1.0, "elapsed_time": 0.0, "tick_elapsed": 0.0, "data": {}}]})
+                _assert_bool(not bool(permanent_timed_state.get("ok", true)), "permanent effect saved as timed should fail", errors)
+                var too_long_timed_state: Dictionary = effects.apply_state({"schema_version": 1, "effects": [{"effect_id": "poison", "stacks": 1, "remaining_duration": 6.0, "elapsed_time": 0.0, "tick_elapsed": 0.0, "data": {}}]})
+                _assert_bool(not bool(too_long_timed_state.get("ok", true)), "timed effect saved beyond definition duration should fail", errors)
 
                 return {
                     "ok": errors.is_empty(),
@@ -1686,6 +1705,7 @@ def _write_effect_container_probe(project: Path) -> None:
                     "has_haste_after_expire": has_haste_after_expire,
                     "has_shielded_after_update": has_shielded_after_update,
                     "apply_result": apply_result,
+                    "float_schema_result": float_schema_result,
                     "round_trip_poison_stacks": 2,
                     "remove_one": remove_one,
                     "remove_all": remove_all,
@@ -1701,6 +1721,9 @@ def _write_effect_container_probe(project: Path) -> None:
                     "infinite_delta_event": infinite_delta_events[0] if not infinite_delta_events.is_empty() else {},
                     "excessive_tick_state": excessive_tick_state,
                     "no_tick_elapsed_state": no_tick_elapsed_state,
+                    "timed_permanent_state": timed_permanent_state,
+                    "permanent_timed_state": permanent_timed_state,
+                    "too_long_timed_state": too_long_timed_state,
                 }
 
 
