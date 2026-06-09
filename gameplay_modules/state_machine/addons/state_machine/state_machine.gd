@@ -4,7 +4,6 @@ extends Node
 const StateMachineConstantsData := preload("res://addons/state_machine/state_machine_constants.gd")
 const StateMachineResultData := preload("res://addons/state_machine/state_machine_result.gd")
 
-signal state_started(current_state_id: String, data: Dictionary)
 signal state_changed(previous_state_id: String, current_state_id: String, data: Dictionary)
 signal transition_failed(from_state_id: String, to_state_id: String, result: Dictionary)
 
@@ -79,7 +78,6 @@ func start(initial_state_id: String = "", data: Dictionary = {}) -> Dictionary:
     _started = true
     _call_enter(target_state, null, data)
     _transitioning = false
-    state_started.emit(target_state_id, data)
     state_changed.emit("", target_state_id, data)
     return result
 
