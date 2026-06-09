@@ -433,6 +433,27 @@ def _write_module_fixture(module_root: Path) -> Path:
 
 
 @unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
+class InventorySeedModuleGodotTests(unittest.TestCase):
+    def test_installed_inventory_seed_demo_scene_loads(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Inventory Seed Scene Probe")
+            add_module(project, "inventory", demo=True)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/inventory_demo/inventory_demo.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            report = probe_project(project, frames=2, artifacts_dir=root / "artifacts")
+
+        self.assertTrue(report["ok"], report["log_summary"]["tail"])
+
+
+@unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
 class SaveLoadModuleGodotTests(unittest.TestCase):
     def test_installed_save_load_scripts_parse(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
