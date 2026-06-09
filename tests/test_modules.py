@@ -659,6 +659,74 @@ class InteractionSeedModuleGodotTests(unittest.TestCase):
 
         self.assertTrue(result["ok"], result)
 
+    def test_installed_interaction_scripts_parse(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Interaction Parse Probe")
+            add_module(project, "interaction", demo=True)
+
+            report = check_project_scripts(
+                project,
+                ["res://addons/interaction", "res://scripts/interaction_demo"],
+                artifacts_dir=root / "artifacts",
+            )
+
+        self.assertTrue(report["ok"], report["diagnostics"])
+
+    def test_installed_interaction_demo_resources_are_valid(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Interaction Resource Probe")
+            add_module(project, "interaction", demo=True)
+
+            report = check_project_resources(
+                project,
+                ["res://scenes/interaction_demo"],
+            )
+
+        self.assertTrue(report["ok"], report["diagnostics"])
+
+    def test_interaction_demo_runs_in_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Interaction Runtime Probe")
+            add_module(project, "interaction", demo=True)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/interaction_demo/interaction_demo.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#InteractionDemo").call("run_interaction_demo")
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["best_interaction_id"], "high")
+        self.assertEqual(result["disabled_best_interaction_id"], "low")
+        self.assertTrue(result["pickup_picked_up"])
+        self.assertTrue(result["door_opened"])
+        self.assertFalse(result["no_candidate_ok"])
+
+    def test_installed_interaction_demo_test_runs_without_main_scene_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Interaction Demo Test Probe")
+            add_module(project, "interaction", demo=True)
+
+            report = run_tests(
+                project,
+                [project / "tests" / "interaction_demo"],
+                artifacts_dir=root / "artifacts",
+                trace="off",
+                timeout=30,
+            )
+
+        self.assertEqual(report["failed"], 0, report["tests"])
+        self.assertEqual(report["passed"], 1)
+
 
 @unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
 class InventorySeedModuleGodotTests(unittest.TestCase):
