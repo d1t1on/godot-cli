@@ -11,12 +11,6 @@ const InventoryStackData := preload("res://addons/inventory/inventory_stack.gd")
 
 var _stacks: Array[Dictionary] = []
 
-
-func _enter_tree() -> void:
-	if not String(save_id).is_empty():
-		add_to_group(InventoryConstantsData.SAVE_GROUP)
-
-
 func add_item(item_id: String, quantity: int = 1) -> Dictionary:
 	var normalized := item_id.strip_edges()
 	var result := InventoryResultData.make(true, normalized, quantity)
