@@ -110,7 +110,30 @@ Missing lifecycle methods are ignored. Missing guards allow the transition.
 }
 ```
 
-The module does not automatically join `save_load`. To persist a state machine, explicitly add the owning node or the `StateMachine` node to `save_participants` and call `get_state()` / `apply_state(data)` from save/load wrappers.
+The module does not automatically join `save_load`. By default, add the owning gameplay node to `save_participants` and wrap the state machine snapshot:
+
+```gdscript
+func save_state() -> Dictionary:
+    return $StateMachine.get_state()
+
+
+func load_state(data: Dictionary) -> void:
+    $StateMachine.apply_state(data)
+```
+
+A raw `StateMachine` node is not a `save_load` participant by itself because `SaveService` calls `save_state()` and `load_state(data)`. To add the `StateMachine` node directly to `save_participants`, attach a custom script or subclass that forwards those methods:
+
+```gdscript
+extends "res://addons/state_machine/state_machine.gd"
+
+
+func save_state() -> Dictionary:
+    return get_state()
+
+
+func load_state(data: Dictionary) -> void:
+    apply_state(data)
+```
 
 ## Validation
 
