@@ -24,7 +24,7 @@ func get_candidates() -> Array:
 		if not is_instance_valid(candidate) or not _is_interactable(candidate):
 			continue
 		valid_candidates.append(candidate)
-		if _can_candidate_interact(candidate):
+		if _is_candidate_enabled(candidate):
 			available_candidates.append(candidate)
 	_candidates = valid_candidates
 	return available_candidates
@@ -54,6 +54,7 @@ func interact_best(data: Dictionary = {}) -> Dictionary:
 		var result := InteractionResultData.make(false)
 		InteractionResultData.add_error(result, "No interaction candidate")
 		_append_warnings(result)
+		_warnings.clear()
 		return result
 	return interact_with(candidate, data)
 
@@ -143,12 +144,10 @@ func _is_interactable(node) -> bool:
 	return node is InteractableData
 
 
-func _can_candidate_interact(candidate: Node, data: Dictionary = {}) -> bool:
+func _is_candidate_enabled(candidate: Node) -> bool:
 	if not _is_interactable(candidate):
 		return false
-	if not bool(candidate.get("enabled")):
-		return false
-	return bool(candidate.call("can_interact", _get_actor(), data))
+	return bool(candidate.get("enabled"))
 
 
 func _get_actor() -> Node:

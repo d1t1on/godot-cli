@@ -1051,6 +1051,10 @@ def _write_interactor_probe(project: Path) -> None:
             extends "res://addons/interaction/interactable.gd"
 
 
+            func can_interact(actor: Node, data: Dictionary = {}) -> bool:
+                return enabled and bool(data.get("allowed", false))
+
+
             func interact(actor: Node, data: Dictionary = {}) -> Dictionary:
                 var result := super.interact(actor, data)
                 result["data_source"] = String(data.get("source", ""))
@@ -1104,7 +1108,7 @@ def _write_interactor_probe(project: Path) -> None:
                 _assert_int(2, interactor.get_candidates().size(), "candidate count", errors)
                 _assert_string("high", interactor.get_best_candidate().get_interaction_id(), "priority winner", errors)
                 _assert_string("Use High", interactor.get_best_prompt(), "best prompt", errors)
-                var high_result: Dictionary = interactor.interact_best({"source": "best"})
+                var high_result: Dictionary = interactor.interact_best({"allowed": true, "source": "best"})
                 _assert_bool(bool(high_result.get("ok", false)), "high interaction succeeds", errors)
                 _assert_string("high", String(high_result.get("interaction_id", "")), "high result id", errors)
                 _assert_string("best", String(high_result.get("data_source", "")), "interact_best data forwarding", errors)
@@ -1135,6 +1139,7 @@ def _write_interactor_probe(project: Path) -> None:
 
                 var target_result: Dictionary = interactor.interact_with(low)
                 _assert_bool(bool(target_result.get("ok", false)), "targeted interaction works outside candidates", errors)
+                _assert_not_contains(target_result.get("warnings", []), "Ambiguous", "ambiguous warning should be consumed", errors)
                 _assert_error(interactor.interact_with(Node.new()), "Target must be an Interactable", "wrong target", errors)
 
                 var freed_parent := Node.new()
@@ -1148,8 +1153,59 @@ def _write_interactor_probe(project: Path) -> None:
                 var string_result: Dictionary = interactor.call("interact_with", "not a node")
                 _assert_error(string_result, "Target must be an Interactable", "string target", errors)
 
+                var actor_3d := Node3D.new()
+                actor_3d.name = "Actor3D"
+                add_child(actor_3d)
                 var interactor_3d = Interactor3DData.new()
-                add_child(interactor_3d)
+                interactor_3d.name = "Interactor3D"
+                actor_3d.add_child(interactor_3d)
+
+                var low_area_3d := Area3D.new()
+                low_area_3d.name = "LowArea3D"
+                add_child(low_area_3d)
+                var low_3d = InteractableData.new()
+                low_3d.name = "Interactable"
+                low_3d.interaction_id = &"low_3d"
+                low_3d.prompt = "Use Low 3D"
+                low_3d.priority = 1
+                low_area_3d.add_child(low_3d)
+
+                var high_area_3d := Area3D.new()
+                high_area_3d.name = "HighArea3D"
+                add_child(high_area_3d)
+                var high_3d = DataEchoInteractableData.new()
+                high_3d.name = "Interactable"
+                high_3d.interaction_id = &"high_3d"
+                high_3d.prompt = "Use High 3D"
+                high_3d.priority = 10
+                high_area_3d.add_child(high_3d)
+
+                interactor_3d.call("_on_node_entered", low_area_3d)
+                interactor_3d.call("_on_node_entered", high_area_3d)
+                _assert_int(2, interactor_3d.get_candidates().size(), "3D candidate count", errors)
+                _assert_string("high_3d", interactor_3d.get_best_candidate().get_interaction_id(), "3D priority winner", errors)
+                _assert_string("Use High 3D", interactor_3d.get_best_prompt(), "3D best prompt", errors)
+                var high_result_3d: Dictionary = interactor_3d.interact_best({"allowed": true, "source": "best_3d"})
+                _assert_bool(bool(high_result_3d.get("ok", false)), "3D high interaction succeeds", errors)
+                _assert_string("high_3d", String(high_result_3d.get("interaction_id", "")), "3D high result id", errors)
+                _assert_string("best_3d", String(high_result_3d.get("data_source", "")), "3D interact_best data forwarding", errors)
+
+                high_3d.enabled = false
+                _assert_string("low_3d", interactor_3d.get_best_candidate().get_interaction_id(), "3D disabled high is skipped", errors)
+                interactor_3d.call("_on_node_exited", low_area_3d)
+                _assert_int(0, interactor_3d.get_candidates().size(), "3D disabled remaining candidate hidden", errors)
+                _assert_error(interactor_3d.interact_with(Node.new()), "Target must be an Interactable", "3D wrong target", errors)
+
+                var freed_parent_3d := Node.new()
+                add_child(freed_parent_3d)
+                var freed_target_3d = InteractableData.new()
+                freed_parent_3d.add_child(freed_target_3d)
+                freed_target_3d.free()
+                var freed_result_3d: Dictionary = interactor_3d.interact_with(freed_target_3d)
+                _assert_bool(not bool(freed_result_3d.get("ok", true)), "3D freed target should fail", errors)
+                _assert_contains(freed_result_3d.get("errors", []), "invalid", "3D freed target error", errors)
+
+                interactor_3d.clear_candidates()
                 var no_candidate_3d: Dictionary = interactor_3d.interact_best()
                 _assert_bool(not bool(no_candidate_3d.get("ok", true)), "3D interactor exposes same no-candidate behavior", errors)
                 _assert_int(0, interactor_3d.get_candidates().size(), "3D empty candidates", errors)
@@ -1182,6 +1238,13 @@ def _write_interactor_probe(project: Path) -> None:
                     if String(message).contains(needle):
                         return
                 errors.append("%s: missing %s in %s" % [label, needle, str(messages)])
+
+
+            func _assert_not_contains(messages: Array, needle: String, label: String, errors: Array[String]) -> void:
+                for message in messages:
+                    if String(message).contains(needle):
+                        errors.append("%s: unexpected %s in %s" % [label, needle, str(messages)])
+                        return
             """
         ),
         encoding="utf-8",
