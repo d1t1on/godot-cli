@@ -1,0 +1,25 @@
+{
+  "name": "inventory",
+  "version": "0.1.0",
+  "display_name": "Inventory",
+  "description": "Resource-driven item stack inventory component for Godot projects.",
+  "godot_version": ">=4.6",
+  "copy": [
+    {"from": "addons/inventory", "to": "addons/inventory"}
+  ],
+  "autoloads": [],
+  "demo": {
+    "copy": [
+      {"from": "demo/scenes", "to": "scenes/inventory_demo"},
+      {"from": "demo/scripts", "to": "scripts/inventory_demo"},
+      {"from": "demo/resources", "to": "resources/inventory_demo"},
+      {"from": "tests", "to": "tests/inventory_demo"}
+    ]
+  },
+  "validation": {
+    "commands": [
+      "godot-playwright check-scripts /path/to/project res://addons/inventory --exclude addons/godot_playwright/**",
+      "godot-playwright check-resources /path/to/project res://addons/inventory --exclude addons/godot_playwright/**"
+    ]
+  }
+}

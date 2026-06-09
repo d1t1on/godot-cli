@@ -39,11 +39,57 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertEqual(save_load["version"], "0.1.0")
         self.assertEqual(save_load["godot_version"], ">=4.6")
 
+    def test_repository_inventory_module_is_discoverable(self) -> None:
+        modules = list_modules()
+        inventory = next(module for module in modules if module["name"] == "inventory")
+        self.assertEqual(inventory["version"], "0.1.0")
+        self.assertEqual(inventory["godot_version"], ">=4.6")
+        self.assertEqual(inventory["autoloads"], [])
+
+    def test_add_inventory_module_copies_files_without_autoload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = _write_project(root / "project")
+
+            report = add_module(project, "inventory")
+
+            self.assertTrue(report["ok"], report)
+            self.assertFalse(report["demo"])
+            self.assertEqual(report["module"], "inventory")
+            self.assertEqual(report["autoloads"], [])
+            self.assertTrue((project / "addons" / "inventory" / "inventory.gd").exists())
+            self.assertTrue((project / "addons" / "inventory" / "inventory_item_database.gd").exists())
+            project_text = (project / "project.godot").read_text(encoding="utf-8")
+            self.assertNotIn("InventoryService", project_text)
+            copied_targets = {entry["target"] for entry in report["copied"]}
+            self.assertIn("res://addons/inventory/inventory.gd", copied_targets)
+
+    def test_add_inventory_module_with_demo_copies_demo_assets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = _write_project(root / "project")
+
+            report = add_module(project, "inventory", demo=True)
+
+            self.assertTrue(report["ok"], report)
+            self.assertTrue(report["demo"])
+            self.assertTrue((project / "scenes" / "inventory_demo" / "inventory_demo.tscn").exists())
+            self.assertTrue((project / "scripts" / "inventory_demo" / "inventory_demo.gd").exists())
+            self.assertTrue((project / "resources" / "inventory_demo" / "item_database.tres").exists())
+            self.assertTrue((project / "tests" / "inventory_demo" / "test_inventory_demo.py").exists())
+
     def test_packaged_save_load_module_mirror_exists(self) -> None:
         bundled_root = default_module_roots()[1]
         manifest = load_module_manifest("save_load", module_root=bundled_root)
         self.assertEqual(manifest["name"], "save_load")
         self.assertTrue((bundled_root / "save_load" / "addons" / "save_load" / "save_service.gd").exists())
+
+    def test_packaged_inventory_module_mirror_exists(self) -> None:
+        bundled_root = default_module_roots()[1]
+        manifest = load_module_manifest("inventory", module_root=bundled_root)
+        self.assertEqual(manifest["name"], "inventory")
+        self.assertEqual(manifest["autoloads"], [])
+        self.assertTrue((bundled_root / "inventory" / "addons" / "inventory" / "inventory.gd").exists())
 
     def test_pyproject_includes_bundled_gameplay_module_data(self) -> None:
         pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8")
@@ -53,11 +99,32 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn('"bundled_gameplay_modules/save_load/demo/scenes/*"', pyproject)
         self.assertIn('"bundled_gameplay_modules/save_load/demo/scripts/*"', pyproject)
         self.assertIn('"bundled_gameplay_modules/save_load/tests/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/inventory/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/inventory/addons/inventory/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/inventory/demo/scenes/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/inventory/demo/scripts/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/inventory/demo/resources/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/inventory/tests/*"', pyproject)
 
     def test_source_and_packaged_save_load_trees_are_identical(self) -> None:
         source_root, bundled_root = default_module_roots()
         source = source_root / "save_load"
         bundled = bundled_root / "save_load"
+        source_files = sorted(path.relative_to(source) for path in source.rglob("*") if path.is_file())
+        bundled_files = sorted(path.relative_to(bundled) for path in bundled.rglob("*") if path.is_file())
+
+        self.assertEqual([path.as_posix() for path in source_files], [path.as_posix() for path in bundled_files])
+        for relative_path in source_files:
+            self.assertEqual(
+                (source / relative_path).read_bytes(),
+                (bundled / relative_path).read_bytes(),
+                relative_path.as_posix(),
+            )
+
+    def test_source_and_packaged_inventory_trees_are_identical(self) -> None:
+        source_root, bundled_root = default_module_roots()
+        source = source_root / "inventory"
+        bundled = bundled_root / "inventory"
         source_files = sorted(path.relative_to(source) for path in source.rglob("*") if path.is_file())
         bundled_files = sorted(path.relative_to(bundled) for path in bundled.rglob("*") if path.is_file())
 
