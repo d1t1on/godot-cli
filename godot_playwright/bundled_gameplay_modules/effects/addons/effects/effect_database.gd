@@ -51,10 +51,12 @@ func validate() -> Dictionary:
 			continue
 		seen[effect_id] = true
 
-		if float(definition.duration) < 0.0:
-			EffectResultData.add_error(result, "duration must be zero or greater for effect_id: %s" % effect_id)
-		if float(definition.tick_interval) < 0.0:
-			EffectResultData.add_error(result, "tick_interval must be zero or greater for effect_id: %s" % effect_id)
+		var duration := float(definition.duration)
+		if not _is_finite_number(duration) or duration < 0.0:
+			EffectResultData.add_error(result, "duration must be finite and zero or greater for effect_id: %s" % effect_id)
+		var tick_interval := float(definition.tick_interval)
+		if not _is_finite_number(tick_interval) or tick_interval < 0.0:
+			EffectResultData.add_error(result, "tick_interval must be finite and zero or greater for effect_id: %s" % effect_id)
 		var stack_mode := String(definition.stack_mode)
 		if not [EffectConstantsData.STACK_REFRESH, EffectConstantsData.STACK_STACK, EffectConstantsData.STACK_IGNORE].has(stack_mode):
 			EffectResultData.add_error(result, "stack_mode must be refresh, stack, or ignore for effect_id: %s" % effect_id)
@@ -75,11 +77,11 @@ func _definition_or_null(effect: Resource):
 
 func _is_json_compatible(value: Variant) -> bool:
 	match typeof(value):
-		TYPE_NIL, TYPE_BOOL, TYPE_STRING, TYPE_STRING_NAME, TYPE_INT:
+		TYPE_NIL, TYPE_BOOL, TYPE_STRING, TYPE_INT:
 			return true
 		TYPE_FLOAT:
 			var number := float(value)
-			return not is_nan(number) and not is_inf(number)
+			return _is_finite_number(number)
 		TYPE_ARRAY:
 			for item in value:
 				if not _is_json_compatible(item):
@@ -94,3 +96,7 @@ func _is_json_compatible(value: Variant) -> bool:
 			return true
 		_:
 			return false
+
+
+func _is_finite_number(value: float) -> bool:
+	return not is_nan(value) and not is_inf(value)

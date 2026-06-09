@@ -1249,6 +1249,33 @@ def _write_effect_database_probe(project: Path) -> None:
                 _assert_bool(not bool(bad_data_result.get("ok", true)), "non-json default_data should fail validation", errors)
                 _assert_contains(bad_data_result.get("errors", []), "JSON-compatible", "default_data validation error", errors)
 
+                var bad_string_name_value = EffectDefinitionData.new()
+                bad_string_name_value.effect_id = &"bad_string_name_value"
+                bad_string_name_value.default_data = {"kind": &"buff"}
+                var bad_string_name_value_database = EffectDatabaseData.new()
+                bad_string_name_value_database.effects.append(bad_string_name_value)
+                var bad_string_name_value_result: Dictionary = bad_string_name_value_database.validate()
+                _assert_bool(not bool(bad_string_name_value_result.get("ok", true)), "StringName default_data value should fail validation", errors)
+                _assert_contains(bad_string_name_value_result.get("errors", []), "JSON-compatible", "StringName default_data value error", errors)
+
+                var bad_duration = EffectDefinitionData.new()
+                bad_duration.effect_id = &"bad_duration"
+                bad_duration.duration = INF
+                var bad_duration_database = EffectDatabaseData.new()
+                bad_duration_database.effects.append(bad_duration)
+                var bad_duration_result: Dictionary = bad_duration_database.validate()
+                _assert_bool(not bool(bad_duration_result.get("ok", true)), "non-finite duration should fail validation", errors)
+                _assert_contains(bad_duration_result.get("errors", []), "duration", "duration validation error", errors)
+
+                var bad_tick_interval = EffectDefinitionData.new()
+                bad_tick_interval.effect_id = &"bad_tick_interval"
+                bad_tick_interval.tick_interval = INF
+                var bad_tick_interval_database = EffectDatabaseData.new()
+                bad_tick_interval_database.effects.append(bad_tick_interval)
+                var bad_tick_interval_result: Dictionary = bad_tick_interval_database.validate()
+                _assert_bool(not bool(bad_tick_interval_result.get("ok", true)), "non-finite tick_interval should fail validation", errors)
+                _assert_contains(bad_tick_interval_result.get("errors", []), "tick_interval", "tick_interval validation error", errors)
+
                 return {"ok": errors.is_empty(), "errors": errors}
 
 
