@@ -468,6 +468,26 @@ class InventorySeedModuleGodotTests(unittest.TestCase):
 
         self.assertTrue(report["ok"], report["log_summary"]["tail"])
 
+    def test_inventory_database_validation_handles_invalid_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Inventory Database Probe")
+            add_module(project, "inventory")
+            _write_inventory_database_probe(project)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/inventory_database_probe.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#InventoryDatabaseProbe").call("run_probe")
+
+        self.assertTrue(result["ok"], result)
+
 
 @unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
 class SaveLoadModuleGodotTests(unittest.TestCase):
@@ -568,6 +588,101 @@ class SaveLoadModuleGodotTests(unittest.TestCase):
         self.assertIn("Duplicate save_id: dup", result["load_result"]["errors"])
         self.assertEqual(result["a_value"], 0)
         self.assertEqual(result["b_value"], 0)
+
+
+def _write_inventory_database_probe(project: Path) -> None:
+    (project / "scripts" / "inventory_database_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            const InventoryItemDefinitionData := preload("res://addons/inventory/inventory_item_definition.gd")
+            const InventoryItemDatabaseData := preload("res://addons/inventory/inventory_item_database.gd")
+
+
+            func run_probe() -> Dictionary:
+                var errors: Array[String] = []
+
+                var potion = InventoryItemDefinitionData.new()
+                potion.item_id = &"potion"
+                potion.display_name = "Potion"
+                potion.max_stack = 5
+                var valid_database = InventoryItemDatabaseData.new()
+                valid_database.items.append(potion)
+                var valid_result: Dictionary = valid_database.validate()
+                _assert_bool(bool(valid_result.get("ok", false)), "valid database should pass", errors)
+                _assert_bool(valid_database.has_item("potion"), "valid database should find potion", errors)
+                _assert_int(5, valid_database.get_max_stack("potion"), "valid database max_stack", errors)
+
+                var invalid_resource_database = InventoryItemDatabaseData.new()
+                invalid_resource_database.items.append(Resource.new())
+                var invalid_resource_result: Dictionary = invalid_resource_database.validate()
+                _assert_bool(not bool(invalid_resource_result.get("ok", true)), "plain Resource should fail validation", errors)
+                _assert_contains(invalid_resource_result.get("errors", []), "InventoryItemDefinition", "plain Resource validation error", errors)
+
+                var whitespace_item = InventoryItemDefinitionData.new()
+                whitespace_item.item_id = &" potion "
+                whitespace_item.max_stack = 5
+                var whitespace_database = InventoryItemDatabaseData.new()
+                whitespace_database.items.append(whitespace_item)
+                var whitespace_result: Dictionary = whitespace_database.validate()
+                _assert_bool(not bool(whitespace_result.get("ok", true)), "whitespace item_id should fail validation", errors)
+                _assert_contains(whitespace_result.get("errors", []), "whitespace", "whitespace validation error", errors)
+
+                var duplicate_item = InventoryItemDefinitionData.new()
+                duplicate_item.item_id = &"potion"
+                duplicate_item.max_stack = 1
+                var duplicate_database = InventoryItemDatabaseData.new()
+                duplicate_database.items.append(potion)
+                duplicate_database.items.append(duplicate_item)
+                var duplicate_result: Dictionary = duplicate_database.validate()
+                _assert_bool(not bool(duplicate_result.get("ok", true)), "duplicate item_id should fail validation", errors)
+                _assert_contains(duplicate_result.get("errors", []), "Duplicate item_id", "duplicate validation error", errors)
+
+                var bad_stack_item = InventoryItemDefinitionData.new()
+                bad_stack_item.item_id = &"bad_stack"
+                bad_stack_item.max_stack = 0
+                var bad_stack_database = InventoryItemDatabaseData.new()
+                bad_stack_database.items.append(bad_stack_item)
+                var bad_stack_result: Dictionary = bad_stack_database.validate()
+                _assert_bool(not bool(bad_stack_result.get("ok", true)), "max_stack <= 0 should fail validation", errors)
+                _assert_contains(bad_stack_result.get("errors", []), "max_stack", "max_stack validation error", errors)
+
+                return {"ok": errors.is_empty(), "errors": errors}
+
+
+            func _assert_bool(value: bool, message: String, errors: Array[String]) -> void:
+                if not value:
+                    errors.append(message)
+
+
+            func _assert_int(expected: int, actual: int, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %d, got %d" % [label, expected, actual])
+
+
+            func _assert_contains(messages: Array, needle: String, label: String, errors: Array[String]) -> void:
+                for message in messages:
+                    if String(message).contains(needle):
+                        return
+                errors.append("%s: missing %s in %s" % [label, needle, str(messages)])
+            """
+        ),
+        encoding="utf-8",
+    )
+    (project / "scenes" / "inventory_database_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://scripts/inventory_database_probe.gd" id="1_probe_script"]
+
+            [node name="InventoryDatabaseProbe" type="Node"]
+            script = ExtResource("1_probe_script")
+            """
+        ),
+        encoding="utf-8",
+    )
 
 
 def _write_duplicate_load_probe(project: Path) -> None:
