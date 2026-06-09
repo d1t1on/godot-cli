@@ -576,6 +576,8 @@ class StateMachineModuleGodotTests(unittest.TestCase):
         self.assertTrue(result["move_result"]["ok"], result["move_result"])
         self.assertTrue(result["attack_result"]["ok"], result["attack_result"])
         self.assertFalse(result["forbidden_result"]["ok"], result["forbidden_result"])
+        self.assertFalse(result["guard_reentrant_result"]["ok"], result["guard_reentrant_result"])
+        self.assertIn("StateMachine is already transitioning", result["guard_reentrant_result"]["errors"])
         self.assertFalse(result["reentrant_result"]["ok"], result["reentrant_result"])
         self.assertFalse(result["duplicate_result"]["ok"], result["duplicate_result"])
         self.assertIn("Duplicate state_id: dup", result["duplicate_result"]["errors"])
@@ -686,6 +688,7 @@ def _write_state_machine_runtime_probe(project: Path) -> None:
 
             var transition_history: Array[String] = []
             var reentrant_result: Dictionary = {}
+            var guard_reentrant_result: Dictionary = {}
 
 
             func _ready() -> void:
@@ -721,6 +724,7 @@ def _write_state_machine_runtime_probe(project: Path) -> None:
                     "move_result": move_result,
                     "attack_result": attack_result,
                     "forbidden_result": forbidden_result,
+                    "guard_reentrant_result": guard_reentrant_result,
                     "snapshot": snapshot,
                     "idle_result": idle_result,
                     "restore_result": restore_result,
@@ -809,6 +813,7 @@ def _write_state_machine_runtime_probe(project: Path) -> None:
 
 
             func can_enter(previous_state: Node, data: Dictionary) -> bool:
+                get_parent().get_parent().set("guard_reentrant_result", get_parent().call("request_transition", "idle"))
                 return false
             """
         ),

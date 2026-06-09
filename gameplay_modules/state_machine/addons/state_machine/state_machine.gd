@@ -67,12 +67,13 @@ func start(initial_state_id: String = "", data: Dictionary = {}) -> Dictionary:
         return result
 
     var target_state: Node = _states_by_id[target_state_id]
+    _transitioning = true
     if not _can_enter_state(target_state, null, data):
         StateMachineResultData.add_error(result, "State cannot enter: %s" % target_state_id)
+        _transitioning = false
         transition_failed.emit("", target_state_id, result)
         return result
 
-    _transitioning = true
     _current_state = target_state
     _current_state_id = target_state_id
     _started = true
@@ -116,16 +117,18 @@ func transition_to(state_id: String, data: Dictionary = {}) -> Dictionary:
 
     var previous_state: Node = _current_state
     var target_state: Node = _states_by_id[target_state_id]
+    _transitioning = true
     if not _can_exit_state(previous_state, target_state):
         StateMachineResultData.add_error(result, "State cannot exit: %s" % _current_state_id)
+        _transitioning = false
         transition_failed.emit(from_state_id, target_state_id, result)
         return result
     if not _can_enter_state(target_state, previous_state, data):
         StateMachineResultData.add_error(result, "State cannot enter: %s" % target_state_id)
+        _transitioning = false
         transition_failed.emit(from_state_id, target_state_id, result)
         return result
 
-    _transitioning = true
     _call_exit(previous_state, target_state)
     _current_state = target_state
     _current_state_id = target_state_id
