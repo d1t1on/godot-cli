@@ -66,7 +66,7 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertEqual(stats["version"], "0.1.0")
         self.assertEqual(stats["godot_version"], ">=4.6")
         self.assertEqual(stats["autoloads"], [])
-        self.assertNotIn("demo", stats)
+        self.assertIn("demo", stats)
 
     def test_add_inventory_module_copies_files_without_autoload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -192,6 +192,20 @@ class ModuleInstallerUnitTests(unittest.TestCase):
             self.assertTrue((project / "scripts" / "interaction_demo" / "interaction_demo_pickup.gd").exists())
             self.assertTrue((project / "scripts" / "interaction_demo" / "interaction_demo_door.gd").exists())
             self.assertTrue((project / "tests" / "interaction_demo" / "test_interaction_demo.py").exists())
+
+    def test_add_stats_module_with_demo_copies_demo_assets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = _write_project(root / "project")
+
+            report = add_module(project, "stats", demo=True)
+
+            self.assertTrue(report["ok"], report)
+            self.assertTrue(report["demo"])
+            self.assertTrue((project / "scenes" / "stats_demo" / "stats_demo.tscn").exists())
+            self.assertTrue((project / "scripts" / "stats_demo" / "stats_demo.gd").exists())
+            self.assertTrue((project / "resources" / "stats_demo" / "stat_database.tres").exists())
+            self.assertTrue((project / "tests" / "stats_demo" / "test_stats_demo.py").exists())
 
     def test_packaged_save_load_module_mirror_exists(self) -> None:
         bundled_root = default_module_roots()[1]
@@ -372,6 +386,8 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         )
         self.assertIn("godot-playwright module add /tmp/agent-game interaction", readme)
         self.assertIn("godot-playwright module add /tmp/agent-game interaction --demo", readme)
+        self.assertIn("godot-playwright module add /tmp/agent-game stats", readme)
+        self.assertIn("godot-playwright module add /tmp/agent-game stats --demo", readme)
 
     def test_save_service_rejects_non_finite_float_states(self) -> None:
         source_root = default_module_roots()[0]
@@ -890,6 +906,81 @@ class StatsModuleGodotTests(unittest.TestCase):
                 result = godot.locator("#StatsContainerReviewProbe").call("run_probe")
 
         self.assertTrue(result["ok"], result)
+
+    def test_installed_stats_demo_resources_are_valid(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Stats Resource Probe")
+            add_module(project, "stats", demo=True)
+
+            report = check_project_resources(
+                project,
+                ["res://scenes/stats_demo", "res://resources/stats_demo"],
+            )
+
+        self.assertTrue(report["ok"], report["diagnostics"])
+
+    def test_stats_demo_runs_in_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Stats Runtime Probe")
+            add_module(project, "stats", demo=True)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/stats_demo/stats_demo.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#StatsDemo").call("run_stats_demo")
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["health_after_restore"], 40.0)
+        self.assertEqual(result["move_speed_after_restore"], 12.0)
+        self.assertFalse(result["missing_stat_ok"])
+        self.assertFalse(result["save_load_checked"])
+
+    def test_installed_stats_demo_test_runs_without_main_scene_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Stats Demo Test Probe")
+            add_module(project, "stats", demo=True)
+
+            report = run_tests(
+                project,
+                [project / "tests" / "stats_demo"],
+                artifacts_dir=root / "artifacts",
+                trace="off",
+                timeout=30,
+            )
+
+        self.assertEqual(report["failed"], 0, report["tests"])
+        self.assertEqual(report["passed"], 1)
+
+    def test_stats_demo_integrates_with_save_load_when_installed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Stats Save Load Probe")
+            add_module(project, "save_load")
+            add_module(project, "stats", demo=True)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/stats_demo/stats_demo.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#StatsDemo").call("run_stats_demo")
+
+        self.assertTrue(result["ok"], result)
+        self.assertTrue(result["save_load_checked"], result)
+        self.assertEqual(result["save_load_health"], 33.0)
 
 
 @unittest.skipUnless(shutil.which("godot"), "godot executable is not available")

@@ -146,6 +146,8 @@ godot-playwright module add /tmp/agent-game state_machine
 godot-playwright module add /tmp/agent-game state_machine --demo
 godot-playwright module add /tmp/agent-game interaction
 godot-playwright module add /tmp/agent-game interaction --demo
+godot-playwright module add /tmp/agent-game stats
+godot-playwright module add /tmp/agent-game stats --demo
 ```
 
 The first gameplay module is `save_load`, a JSON slot save/load service. The
@@ -162,6 +164,8 @@ copies `res://addons/state_machine/` without registering an Autoload. Games add 
 `request_transition()` to move between states.
 
 The `interaction` module adds reusable `Interactable`, `Interactor2D`, and `Interactor3D` components for nearby object interaction. It supports prompts, priority-based candidate selection, structured interaction results, JSON-compatible `get_state()` / `apply_state(data)`, and optional integration with project-specific inventory or save/load behavior without requiring either module.
+
+The `stats` module adds a reusable `StatContainer` node backed by `StatDefinition` and `StatDatabase` Resources. It supports base/current values, pool stats such as health or stamina, min/max clamping, change/depletion/fill signals, JSON-compatible `get_state()` / `apply_state(data)`, and optional persistence through `save_load` when a container has a stable `save_id`.
 
 Probe runtime startup for script errors and warning/error log diagnostics:
 

@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="StatDatabase" load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://addons/stats/stat_database.gd" id="1_stat_database"]
+[ext_resource type="Resource" path="res://resources/stats_demo/health.tres" id="2_health"]
+[ext_resource type="Resource" path="res://resources/stats_demo/stamina.tres" id="3_stamina"]
+[ext_resource type="Resource" path="res://resources/stats_demo/move_speed.tres" id="4_move_speed"]
+[ext_resource type="Resource" path="res://resources/stats_demo/heat.tres" id="5_heat"]
+
+[resource]
+script = ExtResource("1_stat_database")
+stats = Array[Resource]([ExtResource("2_health"), ExtResource("3_stamina"), ExtResource("4_move_speed"), ExtResource("5_heat")])

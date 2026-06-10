@@ -7,3 +7,9 @@ Install with:
 ```sh
 godot-playwright module add /path/to/project stats
 ```
+
+Use `--demo` only when adding a demo scene and copied test is acceptable:
+
+```sh
+godot-playwright module add /path/to/project stats --demo
+```

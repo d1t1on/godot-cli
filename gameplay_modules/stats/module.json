@@ -8,6 +8,14 @@
     {"from": "addons/stats", "to": "addons/stats"}
   ],
   "autoloads": [],
+  "demo": {
+    "copy": [
+      {"from": "demo/scenes", "to": "scenes/stats_demo"},
+      {"from": "demo/scripts", "to": "scripts/stats_demo"},
+      {"from": "demo/resources", "to": "resources/stats_demo"},
+      {"from": "tests", "to": "tests/stats_demo"}
+    ]
+  },
   "validation": {
     "commands": [
       "godot-playwright check-scripts /path/to/project res://addons/stats --exclude addons/godot_playwright/**",
