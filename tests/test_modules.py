@@ -1153,6 +1153,47 @@ class AbilitiesModuleGodotTests(unittest.TestCase):
 
         self.assertTrue(result["ok"], result)
 
+    def test_ability_container_review_regressions_are_validated(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Abilities Container Review Probe")
+            add_module(project, "abilities")
+            _write_abilities_container_review_probe(project)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/abilities_container_review_probe.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#AbilitiesContainerReviewProbe").call("run_probe")
+
+        self.assertTrue(result["ok"], result)
+
+    def test_abilities_demo_integrates_with_save_load_when_installed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Abilities Save Load Probe")
+            add_module(project, "save_load")
+            add_module(project, "abilities")
+            _write_abilities_save_load_probe(project)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/abilities_save_load_probe.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#AbilitiesSaveLoadProbe").call("run_probe")
+
+        self.assertTrue(result["ok"], result)
+
 
 @unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
 class StatsModuleGodotTests(unittest.TestCase):
@@ -2562,6 +2603,335 @@ def _write_abilities_container_probe(project: Path) -> None:
             [ext_resource type="Script" path="res://scripts/abilities_container_probe.gd" id="1_probe_script"]
 
             [node name="AbilitiesContainerProbe" type="Node"]
+            script = ExtResource("1_probe_script")
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_abilities_container_review_probe(project: Path) -> None:
+    (project / "scripts" / "abilities_container_review_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            const AbilityDefinitionData := preload("res://addons/abilities/ability_definition.gd")
+            const AbilityDatabaseData := preload("res://addons/abilities/ability_database.gd")
+            const AbilityContainerData := preload("res://addons/abilities/ability_container.gd")
+
+
+            func run_probe() -> Dictionary:
+                var errors: Array[String] = []
+                _validate_missing_saved_ability_fills_definition_default(errors)
+                _validate_malformed_states_fail_without_mutation(errors)
+                return {"ok": errors.is_empty(), "errors": errors}
+
+
+            func _validate_missing_saved_ability_fills_definition_default(errors: Array[String]) -> void:
+                var container := AbilityContainerData.new()
+                container.initialize_on_ready = false
+                container.auto_update = false
+                container.database = _make_database(true)
+                add_child(container)
+
+                var apply_result: Dictionary = container.apply_state({
+                    "schema_version": 1,
+                    "abilities": [
+                        {
+                            "ability_id": "dash",
+                            "enabled": true,
+                            "cooldown_remaining": 0.25,
+                            "charges": 0,
+                            "charge_recovery_remaining": 0.25,
+                        },
+                    ],
+                })
+                _assert_bool(bool(apply_result.get("ok", false)), "missing ability apply_state should succeed", errors)
+                var abilities: Array = container.get_abilities()
+                _assert_int(2, abilities.size(), "missing ability filled count", errors)
+                if abilities.size() == 2:
+                    _assert_dictionary({
+                        "ability_id": "dash",
+                        "enabled": true,
+                        "cooldown_remaining": 0.25,
+                        "charges": 0,
+                        "charge_recovery_remaining": 0.25,
+                    }, abilities[0], "saved dash runtime", errors)
+                    _assert_dictionary({
+                        "ability_id": "blink",
+                        "enabled": false,
+                        "cooldown_remaining": 0.0,
+                        "charges": 2,
+                        "charge_recovery_remaining": 0.0,
+                    }, abilities[1], "new blink default runtime", errors)
+                container.queue_free()
+
+
+            func _validate_malformed_states_fail_without_mutation(errors: Array[String]) -> void:
+                var container := AbilityContainerData.new()
+                container.initialize_on_ready = false
+                container.auto_update = false
+                container.database = _make_database(false)
+                add_child(container)
+
+                var initialize_result: Dictionary = container.initialize_abilities()
+                _assert_bool(bool(initialize_result.get("ok", false)), "initialize_abilities should succeed", errors)
+                _assert_bool(bool(container.activate("dash").get("ok", false)), "dash activation should succeed before bad states", errors)
+                var before_state: Dictionary = container.get_state()
+                var valid_scan := {
+                    "ability_id": "scan",
+                    "enabled": true,
+                    "cooldown_remaining": 0.0,
+                    "charges": 0,
+                    "charge_recovery_remaining": 0.0,
+                }
+                var valid_dash := {
+                    "ability_id": "dash",
+                    "enabled": true,
+                    "cooldown_remaining": 0.5,
+                    "charges": 0,
+                    "charge_recovery_remaining": 0.5,
+                }
+                var malformed_states: Array = [
+                    {
+                        "label": "stale ability id",
+                        "state": {
+                            "schema_version": 1,
+                            "abilities": [
+                                valid_dash,
+                                valid_scan,
+                                {
+                                    "ability_id": "stale",
+                                    "enabled": true,
+                                    "cooldown_remaining": 0.0,
+                                    "charges": 0,
+                                    "charge_recovery_remaining": 0.0,
+                                },
+                            ],
+                        },
+                    },
+                    {
+                        "label": "fractional schema",
+                        "state": {"schema_version": 1.5, "abilities": [valid_dash, valid_scan]},
+                    },
+                    {
+                        "label": "string schema",
+                        "state": {"schema_version": "1", "abilities": [valid_dash, valid_scan]},
+                    },
+                    {
+                        "label": "non-integer charges",
+                        "state": {
+                            "schema_version": 1,
+                            "abilities": [
+                                {
+                                    "ability_id": "dash",
+                                    "enabled": true,
+                                    "cooldown_remaining": 0.5,
+                                    "charges": 0.5,
+                                    "charge_recovery_remaining": 0.5,
+                                },
+                                valid_scan,
+                            ],
+                        },
+                    },
+                    {
+                        "label": "negative cooldown",
+                        "state": {
+                            "schema_version": 1,
+                            "abilities": [
+                                {
+                                    "ability_id": "dash",
+                                    "enabled": true,
+                                    "cooldown_remaining": -0.1,
+                                    "charges": 0,
+                                    "charge_recovery_remaining": 0.5,
+                                },
+                                valid_scan,
+                            ],
+                        },
+                    },
+                    {
+                        "label": "string enabled",
+                        "state": {
+                            "schema_version": 1,
+                            "abilities": [
+                                {
+                                    "ability_id": "dash",
+                                    "enabled": "yes",
+                                    "cooldown_remaining": 0.5,
+                                    "charges": 0,
+                                    "charge_recovery_remaining": 0.5,
+                                },
+                                valid_scan,
+                            ],
+                        },
+                    },
+                ]
+                for entry in malformed_states:
+                    var label := String(entry["label"])
+                    var apply_result: Dictionary = container.apply_state(entry["state"])
+                    _assert_bool(not bool(apply_result.get("ok", true)), "%s should fail" % label, errors)
+                    _assert_dictionary(before_state, container.get_state(), "%s should not mutate" % label, errors)
+
+                container.queue_free()
+
+
+            func _make_database(include_blink: bool) -> Resource:
+                var dash := AbilityDefinitionData.new()
+                dash.ability_id = &"dash"
+                dash.cooldown = 0.5
+                dash.max_charges = 1
+                dash.initial_charges = 1
+
+                var scan := AbilityDefinitionData.new()
+                scan.ability_id = &"scan"
+                scan.max_charges = 0
+                scan.initial_charges = 0
+
+                var database := AbilityDatabaseData.new()
+                database.abilities.append(dash)
+                if include_blink:
+                    var blink := AbilityDefinitionData.new()
+                    blink.ability_id = &"blink"
+                    blink.max_charges = 3
+                    blink.initial_charges = 2
+                    blink.enabled_by_default = false
+                    database.abilities.append(blink)
+                else:
+                    database.abilities.append(scan)
+                return database
+
+
+            func _assert_bool(value: bool, message: String, errors: Array[String]) -> void:
+                if not value:
+                    errors.append(message)
+
+
+            func _assert_int(expected: int, actual: int, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %d, got %d" % [label, expected, actual])
+
+
+            func _assert_dictionary(expected: Dictionary, actual: Dictionary, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %s, got %s" % [label, str(expected), str(actual)])
+            """
+        ),
+        encoding="utf-8",
+    )
+    (project / "scenes" / "abilities_container_review_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://scripts/abilities_container_review_probe.gd" id="1_probe_script"]
+
+            [node name="AbilitiesContainerReviewProbe" type="Node"]
+            script = ExtResource("1_probe_script")
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_abilities_save_load_probe(project: Path) -> None:
+    (project / "scripts" / "abilities_save_load_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            const AbilityDefinitionData := preload("res://addons/abilities/ability_definition.gd")
+            const AbilityDatabaseData := preload("res://addons/abilities/ability_database.gd")
+            const AbilityContainerData := preload("res://addons/abilities/ability_container.gd")
+
+
+            func run_probe() -> Dictionary:
+                var errors: Array[String] = []
+                var save_service = get_node("/root/SaveService")
+                var slot_id := "abilities_probe_slot"
+                save_service.delete_slot(slot_id)
+
+                var container := AbilityContainerData.new()
+                container.initialize_on_ready = false
+                container.auto_update = false
+                container.database = _make_database()
+                container.save_id = &"probe_abilities"
+                add_child(container)
+
+                _assert_bool(container.is_in_group(&"save_participants"), "container with save_id should join save_participants", errors)
+                _assert_string("probe_abilities", container.get_save_id(), "container save id", errors)
+                _assert_ok(container.initialize_abilities(), "initialize_abilities", errors)
+                _assert_ok(container.activate("dash"), "activate dash before save", errors)
+                var activated_runtime: Dictionary = container.get_ability_runtime("dash")
+                _assert_int(1, int(activated_runtime.get("charges", -1)), "dash charges before save", errors)
+                _assert_float(2.0, float(activated_runtime.get("cooldown_remaining", -1.0)), "dash cooldown before save", errors)
+                _assert_float(5.0, float(activated_runtime.get("charge_recovery_remaining", -1.0)), "dash recovery before save", errors)
+
+                var save_result: Dictionary = save_service.save_slot(slot_id)
+                _assert_ok(save_result, "save_slot", errors)
+                container.clear_runtime_state()
+
+                var load_result: Dictionary = save_service.load_slot(slot_id)
+                _assert_ok(load_result, "load_slot", errors)
+                var restored_runtime: Dictionary = container.get_ability_runtime("dash")
+                _assert_int(1, int(restored_runtime.get("charges", -1)), "dash charges after load", errors)
+                _assert_float(2.0, float(restored_runtime.get("cooldown_remaining", -1.0)), "dash cooldown after load", errors)
+                _assert_float(5.0, float(restored_runtime.get("charge_recovery_remaining", -1.0)), "dash recovery after load", errors)
+
+                save_service.delete_slot(slot_id)
+                container.queue_free()
+                return {"ok": errors.is_empty(), "errors": errors}
+
+
+            func _make_database() -> Resource:
+                var dash := AbilityDefinitionData.new()
+                dash.ability_id = &"dash"
+                dash.cooldown = 2.0
+                dash.max_charges = 2
+                dash.initial_charges = 2
+                dash.charge_recovery_time = 5.0
+
+                var database := AbilityDatabaseData.new()
+                database.abilities.append(dash)
+                return database
+
+
+            func _assert_ok(result: Dictionary, label: String, errors: Array[String]) -> void:
+                if not bool(result.get("ok", false)):
+                    errors.append("%s failed: %s" % [label, str(result)])
+
+
+            func _assert_bool(value: bool, message: String, errors: Array[String]) -> void:
+                if not value:
+                    errors.append(message)
+
+
+            func _assert_string(expected: String, actual: String, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %s, got %s" % [label, expected, actual])
+
+
+            func _assert_int(expected: int, actual: int, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %d, got %d" % [label, expected, actual])
+
+
+            func _assert_float(expected: float, actual: float, label: String, errors: Array[String]) -> void:
+                if absf(expected - actual) > 0.0001:
+                    errors.append("%s: expected %s, got %s" % [label, str(expected), str(actual)])
+            """
+        ),
+        encoding="utf-8",
+    )
+    (project / "scenes" / "abilities_save_load_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://scripts/abilities_save_load_probe.gd" id="1_probe_script"]
+
+            [node name="AbilitiesSaveLoadProbe" type="Node"]
             script = ExtResource("1_probe_script")
             """
         ),
