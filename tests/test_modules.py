@@ -60,6 +60,13 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertEqual(interaction["godot_version"], ">=4.6")
         self.assertEqual(interaction["autoloads"], [])
 
+    def test_repository_effects_module_is_discoverable(self) -> None:
+        modules = list_modules()
+        effects = next(module for module in modules if module["name"] == "effects")
+        self.assertEqual(effects["version"], "0.1.0")
+        self.assertEqual(effects["godot_version"], ">=4.6")
+        self.assertEqual(effects["autoloads"], [])
+
     def test_add_inventory_module_copies_files_without_autoload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -95,6 +102,24 @@ class ModuleInstallerUnitTests(unittest.TestCase):
             self.assertNotIn("StateMachineService", project_text)
             copied_targets = {entry["target"] for entry in report["copied"]}
             self.assertIn("res://addons/state_machine/state_machine.gd", copied_targets)
+
+    def test_add_effects_module_copies_files_without_autoload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = _write_project(root / "project")
+
+            report = add_module(project, "effects")
+
+            self.assertTrue(report["ok"], report)
+            self.assertFalse(report["demo"])
+            self.assertEqual(report["module"], "effects")
+            self.assertEqual(report["autoloads"], [])
+            self.assertTrue((project / "addons" / "effects" / "effect_container.gd").exists())
+            self.assertTrue((project / "addons" / "effects" / "effect_definition.gd").exists())
+            project_text = (project / "project.godot").read_text(encoding="utf-8")
+            self.assertNotIn("EffectService", project_text)
+            copied_targets = {entry["target"] for entry in report["copied"]}
+            self.assertIn("res://addons/effects/effect_container.gd", copied_targets)
 
     def test_add_inventory_module_with_demo_copies_demo_assets(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -157,6 +182,20 @@ class ModuleInstallerUnitTests(unittest.TestCase):
             self.assertTrue((project / "scripts" / "interaction_demo" / "interaction_demo_door.gd").exists())
             self.assertTrue((project / "tests" / "interaction_demo" / "test_interaction_demo.py").exists())
 
+    def test_add_effects_module_with_demo_copies_demo_assets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = _write_project(root / "project")
+
+            report = add_module(project, "effects", demo=True)
+
+            self.assertTrue(report["ok"], report)
+            self.assertTrue(report["demo"])
+            self.assertTrue((project / "scenes" / "effects_demo" / "effects_demo.tscn").exists())
+            self.assertTrue((project / "scripts" / "effects_demo" / "effects_demo.gd").exists())
+            self.assertTrue((project / "resources" / "effects_demo" / "effect_database.tres").exists())
+            self.assertTrue((project / "tests" / "effects_demo" / "test_effects_demo.py").exists())
+
     def test_packaged_save_load_module_mirror_exists(self) -> None:
         bundled_root = default_module_roots()[1]
         manifest = load_module_manifest("save_load", module_root=bundled_root)
@@ -186,6 +225,13 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertEqual(manifest["autoloads"], [])
         self.assertTrue((bundled_root / "interaction" / "addons" / "interaction" / "interactable.gd").exists())
 
+    def test_packaged_effects_module_mirror_exists(self) -> None:
+        bundled_root = default_module_roots()[1]
+        manifest = load_module_manifest("effects", module_root=bundled_root)
+        self.assertEqual(manifest["name"], "effects")
+        self.assertEqual(manifest["autoloads"], [])
+        self.assertTrue((bundled_root / "effects" / "addons" / "effects" / "effect_container.gd").exists())
+
     def test_pyproject_includes_bundled_gameplay_module_data(self) -> None:
         pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn('"bundled_addons/godot_playwright/*"', pyproject)
@@ -210,6 +256,12 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn('"bundled_gameplay_modules/interaction/demo/scenes/*"', pyproject)
         self.assertIn('"bundled_gameplay_modules/interaction/demo/scripts/*"', pyproject)
         self.assertIn('"bundled_gameplay_modules/interaction/tests/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/effects/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/effects/addons/effects/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/effects/demo/scenes/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/effects/demo/scripts/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/effects/demo/resources/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/effects/tests/*"', pyproject)
 
     def test_source_and_packaged_save_load_trees_are_identical(self) -> None:
         source_root, bundled_root = default_module_roots()
@@ -262,6 +314,23 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         source_root, bundled_root = default_module_roots()
         source = source_root / "interaction"
         bundled = bundled_root / "interaction"
+
+        source_files = sorted(path.relative_to(source) for path in source.rglob("*") if path.is_file())
+        bundled_files = sorted(path.relative_to(bundled) for path in bundled.rglob("*") if path.is_file())
+
+        self.assertEqual([path.as_posix() for path in source_files], [path.as_posix() for path in bundled_files])
+        for relative_path in source_files:
+            self.assertEqual(
+                (source / relative_path).read_bytes(),
+                (bundled / relative_path).read_bytes(),
+                relative_path.as_posix(),
+            )
+
+    def test_source_and_packaged_effects_trees_are_identical(self) -> None:
+        source_root, bundled_root = default_module_roots()
+        source = source_root / "effects"
+        bundled = bundled_root / "effects"
+
         source_files = sorted(path.relative_to(source) for path in source.rglob("*") if path.is_file())
         bundled_files = sorted(path.relative_to(bundled) for path in bundled.rglob("*") if path.is_file())
 
@@ -336,6 +405,22 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         )
         self.assertIn("godot-playwright module add /tmp/agent-game interaction", readme)
         self.assertIn("godot-playwright module add /tmp/agent-game interaction --demo", readme)
+        self.assertIn("godot-playwright module add /tmp/agent-game effects", readme)
+        self.assertIn("godot-playwright module add /tmp/agent-game effects --demo", readme)
+
+    def test_effects_docs_exist_for_humans_and_agents(self) -> None:
+        source_root = default_module_roots()[0] / "effects"
+        bundled_root = default_module_roots()[1] / "effects"
+        for root in (source_root, bundled_root):
+            readme = (root / "README.md").read_text(encoding="utf-8")
+            agent = (root / "AGENT.md").read_text(encoding="utf-8")
+            self.assertIn("godot-playwright module add /path/to/project effects", readme)
+            self.assertIn("EffectContainer.add_effect", readme)
+            self.assertIn("EffectDefinition", readme)
+            self.assertIn("save_load", readme)
+            self.assertIn("effect_id", agent)
+            self.assertIn("auto_update", agent)
+            self.assertIn("stats", agent)
 
     def test_save_service_rejects_non_finite_float_states(self) -> None:
         source_root = default_module_roots()[0]
@@ -361,6 +446,25 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn("func validate() -> Dictionary", database)
         self.assertIn("class_name InventoryResult", result)
         self.assertIn("static func add_error", result)
+
+    def test_effects_source_defines_resource_helpers(self) -> None:
+        source_root = default_module_roots()[0]
+        effects_root = source_root / "effects" / "addons" / "effects"
+        definition = (effects_root / "effect_definition.gd").read_text(encoding="utf-8")
+        database = (effects_root / "effect_database.gd").read_text(encoding="utf-8")
+        result = (effects_root / "effect_result.gd").read_text(encoding="utf-8")
+        constants = (effects_root / "effect_constants.gd").read_text(encoding="utf-8")
+
+        self.assertIn("class_name EffectDefinition", definition)
+        self.assertIn("@export var effect_id: StringName", definition)
+        self.assertIn("@export var tags: Array[StringName] = []", definition)
+        self.assertIn('@export_enum("refresh", "stack", "ignore") var stack_mode: String = "refresh"', definition)
+        self.assertIn("class_name EffectDatabase", database)
+        self.assertIn("func get_effect(effect_id: String) -> Resource", database)
+        self.assertIn("func validate() -> Dictionary", database)
+        self.assertIn("class_name EffectResult", result)
+        self.assertIn("static func add_event", result)
+        self.assertIn('const STACK_REFRESH: String = "refresh"', constants)
 
     def test_inventory_source_defines_core_stack_api(self) -> None:
         source_root = default_module_roots()[0]
@@ -413,6 +517,24 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn("extends Area3D", interactor_3d)
         self.assertIn("class_name InteractionResult", result)
         self.assertIn("static func add_error", result)
+
+    def test_effects_source_defines_container_api(self) -> None:
+        source_root = default_module_roots()[0]
+        container_source = (source_root / "effects" / "addons" / "effects" / "effect_container.gd").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("class_name EffectContainer", container_source)
+        self.assertIn("@export var database: Resource", container_source)
+        self.assertIn("@export var save_id: StringName", container_source)
+        self.assertIn("@export var auto_update: bool = true", container_source)
+        self.assertIn("signal effect_added", container_source)
+        self.assertIn("func add_effect(effect_id: String, source: Node = null, stacks: int = 1, data: Dictionary = {}) -> Dictionary", container_source)
+        self.assertIn("func remove_effect(effect_id: String, stacks: int = 0) -> Dictionary", container_source)
+        self.assertIn("func update_effects(delta: float) -> Array[Dictionary]", container_source)
+        self.assertIn("func get_state() -> Dictionary", container_source)
+        self.assertIn("func apply_state(data: Dictionary) -> Dictionary", container_source)
+        self.assertIn("func save_state() -> Dictionary", container_source)
 
     def test_load_module_manifest_rejects_unknown_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -834,6 +956,26 @@ class InteractionSeedModuleGodotTests(unittest.TestCase):
         self.assertEqual(report["failed"], 0, report["tests"])
         self.assertEqual(report["passed"], 1)
 
+@unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
+class EffectsSeedModuleGodotTests(unittest.TestCase):
+    def test_installed_effects_seed_demo_scene_loads(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Effects Seed Scene Probe")
+            add_module(project, "effects", demo=True)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/effects_demo/effects_demo.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            report = probe_project(project, frames=2, artifacts_dir=root / "artifacts")
+
+        self.assertTrue(report["ok"], report["log_summary"]["tail"])
+
 
 @unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
 class InventorySeedModuleGodotTests(unittest.TestCase):
@@ -1111,6 +1253,157 @@ class InventoryModuleGodotTests(unittest.TestCase):
         self.assertEqual(result["potion_quantity"], 2)
         self.assertEqual(result["key_quantity"], 1)
         self.assertEqual(result["state_round_trip_quantity"], 2)
+
+
+@unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
+class EffectsModuleGodotTests(unittest.TestCase):
+    def test_effect_database_validation_handles_invalid_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Effects Database Probe")
+            add_module(project, "effects")
+            _write_effect_database_probe(project)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/effect_database_probe.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#EffectDatabaseProbe").call("run_probe")
+
+        self.assertTrue(result["ok"], result)
+
+    def test_effect_container_runtime_probe_validates_core_behavior(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Effects Runtime Probe")
+            add_module(project, "effects")
+            _write_effect_container_probe(project)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/effect_container_probe.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            resource_report = check_project_resources(project, ["res://scenes/effect_container_probe.tscn"])
+            self.assertTrue(resource_report["ok"], resource_report["diagnostics"])
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#EffectContainerProbe").call("run_probe")
+
+        self.assertTrue(result["ok"], result)
+        self.assertTrue(result["add_haste"]["ok"], result["add_haste"])
+        self.assertEqual(result["haste_stacks"], 1)
+        self.assertEqual(result["poison_stacks"], 3)
+        self.assertGreaterEqual(result["tick_count"], 2)
+        self.assertFalse(result["has_haste_after_expire"])
+        self.assertTrue(result["has_shielded_after_update"])
+        self.assertEqual(result["round_trip_poison_stacks"], 2)
+        self.assertFalse(result["unknown_result"]["ok"], result["unknown_result"])
+        self.assertFalse(result["negative_delta_event"]["ok"], result["negative_delta_event"])
+        self.assertTrue(result["float_schema_result"]["ok"], result["float_schema_result"])
+        self.assertFalse(result["timed_permanent_state"]["ok"], result["timed_permanent_state"])
+        self.assertFalse(result["permanent_timed_state"]["ok"], result["permanent_timed_state"])
+        self.assertFalse(result["too_long_timed_state"]["ok"], result["too_long_timed_state"])
+
+    def test_installed_effects_scripts_parse(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Effects Parse Probe")
+            add_module(project, "effects", demo=True)
+
+            report = check_project_scripts(
+                project,
+                ["res://addons/effects", "res://scripts/effects_demo"],
+                artifacts_dir=root / "artifacts",
+            )
+
+        self.assertTrue(report["ok"], report["diagnostics"])
+
+    def test_installed_effects_demo_resources_are_valid(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Effects Resource Probe")
+            add_module(project, "effects", demo=True)
+
+            report = check_project_resources(
+                project,
+                ["res://scenes/effects_demo", "res://resources/effects_demo"],
+            )
+
+        self.assertTrue(report["ok"], report["diagnostics"])
+
+    def test_effects_demo_runs_in_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Effects Demo Probe")
+            add_module(project, "effects", demo=True)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/effects_demo/effects_demo.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#EffectsDemo").call("run_effects_demo")
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["poison_stack_count"], 3)
+        self.assertGreaterEqual(result["poison_tick_count"], 2)
+        self.assertFalse(result["has_haste_after_expire"])
+        self.assertTrue(result["has_shielded_after_update"])
+        self.assertFalse(result["missing_database_result"]["ok"], result["missing_database_result"])
+        self.assertFalse(result["malformed_state_result"]["ok"], result["malformed_state_result"])
+        self.assertFalse(result["save_load_checked"])
+
+    def test_installed_effects_demo_test_runs_without_main_scene_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Effects Demo Test Probe")
+            add_module(project, "effects", demo=True)
+
+            report = run_tests(
+                project,
+                [project / "tests" / "effects_demo"],
+                artifacts_dir=root / "artifacts",
+                trace="off",
+                timeout=30,
+            )
+
+        self.assertEqual(report["failed"], 0, report["tests"])
+        self.assertEqual(report["passed"], 1)
+
+    def test_effects_demo_integrates_with_save_load_when_installed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Effects Save Load Probe")
+            add_module(project, "save_load")
+            add_module(project, "effects", demo=True)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/effects_demo/effects_demo.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#EffectsDemo").call("run_effects_demo")
+
+        self.assertTrue(result["ok"], result)
+        self.assertTrue(result["save_load_checked"], result)
+        self.assertEqual(result["save_load_poison_stacks"], 2)
 
 
 @unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
@@ -1645,6 +1938,454 @@ def _write_inventory_database_probe(project: Path) -> None:
 
             [node name="InventoryDatabaseProbe" type="Node"]
             script = ExtResource("1_probe_script")
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_effect_database_probe(project: Path) -> None:
+    (project / "scripts" / "effect_database_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            const EffectDefinitionData := preload("res://addons/effects/effect_definition.gd")
+            const EffectDatabaseData := preload("res://addons/effects/effect_database.gd")
+
+
+            func run_probe() -> Dictionary:
+                var errors: Array[String] = []
+
+                var haste = EffectDefinitionData.new()
+                haste.effect_id = &"haste"
+                haste.display_name = "Haste"
+                haste.tags.append(&"movement")
+                haste.tags.append(&"buff")
+                haste.duration = 5.0
+                haste.tick_interval = 0.0
+                haste.stack_mode = "refresh"
+                haste.max_stacks = 1
+                haste.default_data = {"speed_multiplier": 1.25}
+                var valid_database = EffectDatabaseData.new()
+                valid_database.effects.append(haste)
+                var valid_result: Dictionary = valid_database.validate()
+                _assert_bool(bool(valid_result.get("ok", false)), "valid database should pass", errors)
+                _assert_bool(valid_database.has_effect("haste"), "valid database should find haste", errors)
+                var found_effect = valid_database.get_effect("haste")
+                _assert_bool(found_effect != null, "valid database should return haste", errors)
+                if found_effect != null:
+                    _assert_int(1, int(found_effect.max_stacks), "valid max stacks", errors)
+
+                var invalid_resource_database = EffectDatabaseData.new()
+                invalid_resource_database.effects.append(Resource.new())
+                var invalid_resource_result: Dictionary = invalid_resource_database.validate()
+                _assert_bool(not bool(invalid_resource_result.get("ok", true)), "plain Resource should fail validation", errors)
+                _assert_contains(invalid_resource_result.get("errors", []), "EffectDefinition", "plain Resource validation error", errors)
+
+                var whitespace_effect = EffectDefinitionData.new()
+                whitespace_effect.effect_id = &" haste "
+                var whitespace_database = EffectDatabaseData.new()
+                whitespace_database.effects.append(whitespace_effect)
+                var whitespace_result: Dictionary = whitespace_database.validate()
+                _assert_bool(not bool(whitespace_result.get("ok", true)), "whitespace effect_id should fail validation", errors)
+                _assert_contains(whitespace_result.get("errors", []), "whitespace", "whitespace validation error", errors)
+
+                var duplicate_effect = EffectDefinitionData.new()
+                duplicate_effect.effect_id = &"haste"
+                var duplicate_database = EffectDatabaseData.new()
+                duplicate_database.effects.append(haste)
+                duplicate_database.effects.append(duplicate_effect)
+                var duplicate_result: Dictionary = duplicate_database.validate()
+                _assert_bool(not bool(duplicate_result.get("ok", true)), "duplicate effect_id should fail validation", errors)
+                _assert_contains(duplicate_result.get("errors", []), "Duplicate effect_id", "duplicate validation error", errors)
+
+                var bad_stack_mode = EffectDefinitionData.new()
+                bad_stack_mode.effect_id = &"bad_mode"
+                bad_stack_mode.stack_mode = "combine"
+                var bad_stack_mode_database = EffectDatabaseData.new()
+                bad_stack_mode_database.effects.append(bad_stack_mode)
+                var bad_stack_mode_result: Dictionary = bad_stack_mode_database.validate()
+                _assert_bool(not bool(bad_stack_mode_result.get("ok", true)), "invalid stack_mode should fail validation", errors)
+                _assert_contains(bad_stack_mode_result.get("errors", []), "stack_mode", "stack_mode validation error", errors)
+
+                var bad_default_data = EffectDefinitionData.new()
+                bad_default_data.effect_id = &"bad_data"
+                bad_default_data.default_data = {"node": Node.new()}
+                var bad_data_database = EffectDatabaseData.new()
+                bad_data_database.effects.append(bad_default_data)
+                var bad_data_result: Dictionary = bad_data_database.validate()
+                _assert_bool(not bool(bad_data_result.get("ok", true)), "non-json default_data should fail validation", errors)
+                _assert_contains(bad_data_result.get("errors", []), "JSON-compatible", "default_data validation error", errors)
+
+                var bad_string_name_value = EffectDefinitionData.new()
+                bad_string_name_value.effect_id = &"bad_string_name_value"
+                bad_string_name_value.default_data = {"kind": &"buff"}
+                var bad_string_name_value_database = EffectDatabaseData.new()
+                bad_string_name_value_database.effects.append(bad_string_name_value)
+                var bad_string_name_value_result: Dictionary = bad_string_name_value_database.validate()
+                _assert_bool(not bool(bad_string_name_value_result.get("ok", true)), "StringName default_data value should fail validation", errors)
+                _assert_contains(bad_string_name_value_result.get("errors", []), "JSON-compatible", "StringName default_data value error", errors)
+
+                var bad_duration = EffectDefinitionData.new()
+                bad_duration.effect_id = &"bad_duration"
+                bad_duration.duration = INF
+                var bad_duration_database = EffectDatabaseData.new()
+                bad_duration_database.effects.append(bad_duration)
+                var bad_duration_result: Dictionary = bad_duration_database.validate()
+                _assert_bool(not bool(bad_duration_result.get("ok", true)), "non-finite duration should fail validation", errors)
+                _assert_contains(bad_duration_result.get("errors", []), "duration", "duration validation error", errors)
+
+                var bad_tick_interval = EffectDefinitionData.new()
+                bad_tick_interval.effect_id = &"bad_tick_interval"
+                bad_tick_interval.tick_interval = INF
+                var bad_tick_interval_database = EffectDatabaseData.new()
+                bad_tick_interval_database.effects.append(bad_tick_interval)
+                var bad_tick_interval_result: Dictionary = bad_tick_interval_database.validate()
+                _assert_bool(not bool(bad_tick_interval_result.get("ok", true)), "non-finite tick_interval should fail validation", errors)
+                _assert_contains(bad_tick_interval_result.get("errors", []), "tick_interval", "tick_interval validation error", errors)
+
+                return {"ok": errors.is_empty(), "errors": errors}
+
+
+            func _assert_bool(value: bool, message: String, errors: Array[String]) -> void:
+                if not value:
+                    errors.append(message)
+
+
+            func _assert_int(expected: int, actual: int, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %d, got %d" % [label, expected, actual])
+
+
+            func _assert_contains(values: Array, text: String, label: String, errors: Array[String]) -> void:
+                for value in values:
+                    if String(value).contains(text):
+                        return
+                errors.append("%s: did not find %s in %s" % [label, text, str(values)])
+            """
+        ),
+        encoding="utf-8",
+    )
+    (project / "scenes" / "effect_database_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://scripts/effect_database_probe.gd" id="1_probe"]
+
+            [node name="EffectDatabaseProbe" type="Node"]
+            script = ExtResource("1_probe")
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_effect_container_probe(project: Path) -> None:
+    scripts_dir = project / "scripts"
+    scenes_dir = project / "scenes"
+    resources_dir = project / "resources" / "effects_probe"
+    scripts_dir.mkdir(exist_ok=True)
+    scenes_dir.mkdir(exist_ok=True)
+    resources_dir.mkdir(parents=True, exist_ok=True)
+    (resources_dir / "haste.tres").write_text(
+        textwrap.dedent(
+            """\
+            [gd_resource type="Resource" script_class="EffectDefinition" load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://addons/effects/effect_definition.gd" id="1_haste"]
+
+            [resource]
+            script = ExtResource("1_haste")
+            effect_id = &"haste"
+            display_name = "Haste"
+            description = "Temporarily increases speed."
+            tags = Array[StringName]([&"buff", &"movement"])
+            duration = 2.0
+            tick_interval = 0.0
+            stack_mode = "refresh"
+            max_stacks = 1
+            default_data = {"speed_multiplier": 1.25}
+            """
+        ),
+        encoding="utf-8",
+    )
+    (resources_dir / "poison.tres").write_text(
+        textwrap.dedent(
+            """\
+            [gd_resource type="Resource" script_class="EffectDefinition" load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://addons/effects/effect_definition.gd" id="1_poison"]
+
+            [resource]
+            script = ExtResource("1_poison")
+            effect_id = &"poison"
+            display_name = "Poison"
+            description = "Ticks periodically."
+            tags = Array[StringName]([&"debuff", &"dot"])
+            duration = 5.0
+            tick_interval = 1.0
+            stack_mode = "stack"
+            max_stacks = 3
+            default_data = {"damage": 2}
+            """
+        ),
+        encoding="utf-8",
+    )
+    (resources_dir / "shielded.tres").write_text(
+        textwrap.dedent(
+            """\
+            [gd_resource type="Resource" script_class="EffectDefinition" load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://addons/effects/effect_definition.gd" id="1_shielded"]
+
+            [resource]
+            script = ExtResource("1_shielded")
+            effect_id = &"shielded"
+            display_name = "Shielded"
+            description = "Permanent shield marker."
+            tags = Array[StringName]([&"buff", &"defense"])
+            duration = 0.0
+            tick_interval = 0.0
+            stack_mode = "ignore"
+            max_stacks = 1
+            default_data = {"armor_bonus": 3}
+            """
+        ),
+        encoding="utf-8",
+    )
+    (resources_dir / "short_tick.tres").write_text(
+        textwrap.dedent(
+            """\
+            [gd_resource type="Resource" script_class="EffectDefinition" load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://addons/effects/effect_definition.gd" id="1_short_tick"]
+
+            [resource]
+            script = ExtResource("1_short_tick")
+            effect_id = &"short_tick"
+            display_name = "Short Tick"
+            description = "Expires before its first tick."
+            tags = Array[StringName]([&"probe"])
+            duration = 0.5
+            tick_interval = 1.0
+            stack_mode = "refresh"
+            max_stacks = 1
+            default_data = {}
+            """
+        ),
+        encoding="utf-8",
+    )
+    (resources_dir / "effect_database.tres").write_text(
+        textwrap.dedent(
+            """\
+            [gd_resource type="Resource" script_class="EffectDatabase" load_steps=6 format=3]
+
+            [ext_resource type="Script" path="res://addons/effects/effect_database.gd" id="1_database"]
+            [ext_resource type="Resource" path="res://resources/effects_probe/haste.tres" id="2_haste"]
+            [ext_resource type="Resource" path="res://resources/effects_probe/poison.tres" id="3_poison"]
+            [ext_resource type="Resource" path="res://resources/effects_probe/shielded.tres" id="4_shielded"]
+            [ext_resource type="Resource" path="res://resources/effects_probe/short_tick.tres" id="5_short_tick"]
+
+            [resource]
+            script = ExtResource("1_database")
+            effects = Array[Resource]([ExtResource("2_haste"), ExtResource("3_poison"), ExtResource("4_shielded"), ExtResource("5_short_tick")])
+            """
+        ),
+        encoding="utf-8",
+    )
+    (scripts_dir / "effect_container_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            @onready var effects: Node = $EffectContainer
+
+
+            func run_probe() -> Dictionary:
+                var errors: Array[String] = []
+                effects.clear_effects()
+                var add_haste: Dictionary = effects.add_effect("haste", self, 1, {"source_id": "probe"})
+                _assert_bool(bool(add_haste.get("ok", false)), "add haste should succeed", errors)
+                var refresh_haste: Dictionary = effects.add_effect("haste", self, 1, {"speed_multiplier": 1.5})
+                _assert_bool(bool(refresh_haste.get("ok", false)), "refresh haste should succeed", errors)
+                _assert_int(1, effects.get_stack_count("haste"), "haste stack count", errors)
+                _assert_float(1.5, float(effects.get_effect("haste").get("data", {}).get("speed_multiplier", 0.0)), "haste data overlay", errors)
+
+                var add_poison: Dictionary = effects.add_effect("poison", self, 5, {"source_id": "snake"})
+                _assert_bool(bool(add_poison.get("ok", false)), "add poison should succeed", errors)
+                _assert_int(3, effects.get_stack_count("poison"), "poison stack count after clamp", errors)
+                _assert_int(2, int(add_poison.get("remainder", -1)), "poison stack remainder", errors)
+
+                var add_shielded: Dictionary = effects.add_effect("shielded", self, 1)
+                var ignored_shielded: Dictionary = effects.add_effect("shielded", self, 1)
+                _assert_bool(bool(add_shielded.get("ok", false)), "add shielded should succeed", errors)
+                _assert_bool(bool(ignored_shielded.get("ok", false)), "ignored shielded should report success", errors)
+                _assert_int(1, effects.get_stack_count("shielded"), "shielded stack count", errors)
+
+                effects.clear_effects()
+                var add_short_tick: Dictionary = effects.add_effect("short_tick", self, 1)
+                _assert_bool(bool(add_short_tick.get("ok", false)), "add short_tick should succeed", errors)
+                var short_tick_events: Array = effects.update_effects(2.0)
+                _assert_int(0, _count_events_for_effect(short_tick_events, "tick", "short_tick"), "short_tick should not tick after expiry", errors)
+                _assert_bool(_count_events_for_effect(short_tick_events, "expired", "short_tick") >= 1, "short_tick should expire", errors)
+                _assert_bool(not effects.has_effect("short_tick"), "short_tick should not remain active", errors)
+
+                effects.clear_effects()
+                effects.add_effect("haste", self, 1, {"source_id": "probe"})
+                effects.add_effect("haste", self, 1, {"speed_multiplier": 1.5})
+                effects.add_effect("poison", self, 5, {"source_id": "snake"})
+                effects.add_effect("shielded", self, 1)
+
+                var tick_events: Array = effects.update_effects(2.5)
+                var tick_count := _count_events(tick_events, "tick")
+                _assert_int(2, tick_count, "poison tick count after 2.5s", errors)
+                var expiry_events: Array = effects.update_effects(3.0)
+                _assert_bool(_count_events(expiry_events, "expired") >= 1, "haste or poison should expire", errors)
+                _assert_bool(not effects.has_effect("haste"), "haste should expire", errors)
+                _assert_bool(effects.has_effect("shielded"), "permanent shielded should remain", errors)
+                var has_haste_after_expire: bool = effects.has_effect("haste")
+                var has_shielded_after_update: bool = effects.has_effect("shielded")
+
+                effects.clear_effects()
+                effects.add_effect("poison", self, 2)
+                effects.update_effects(1.25)
+                var saved_state: Dictionary = effects.get_state()
+                effects.clear_effects()
+                effects.add_effect("haste", self, 1)
+                var apply_result: Dictionary = effects.apply_state(saved_state)
+                _assert_bool(bool(apply_result.get("ok", false)), "apply state should succeed", errors)
+                _assert_int(2, effects.get_stack_count("poison"), "poison stack count after state round-trip", errors)
+                _assert_bool(not effects.has_effect("haste"), "state round-trip should replace active effects", errors)
+
+                var float_schema_state: Dictionary = saved_state.duplicate(true)
+                float_schema_state["schema_version"] = 1.0
+                effects.clear_effects()
+                var float_schema_result: Dictionary = effects.apply_state(float_schema_state)
+                _assert_bool(bool(float_schema_result.get("ok", false)), "integral float schema_version should restore state", errors)
+                _assert_int(2, effects.get_stack_count("poison"), "poison stack count after float schema_version state", errors)
+
+                var remove_one: Dictionary = effects.remove_effect("poison", 1)
+                _assert_bool(bool(remove_one.get("ok", false)), "partial remove should succeed", errors)
+                _assert_int(1, effects.get_stack_count("poison"), "poison stack count after partial remove", errors)
+                var remove_all: Dictionary = effects.remove_effect("poison")
+                _assert_bool(bool(remove_all.get("ok", false)), "full remove should succeed", errors)
+                _assert_bool(not effects.has_effect("poison"), "poison should be removed", errors)
+
+                var unknown_result: Dictionary = effects.add_effect("missing", self, 1)
+                _assert_bool(not bool(unknown_result.get("ok", true)), "unknown effect should fail", errors)
+                var bad_stacks_result: Dictionary = effects.add_effect("haste", self, 0)
+                _assert_bool(not bool(bad_stacks_result.get("ok", true)), "zero stacks should fail", errors)
+                var malformed_state: Dictionary = effects.apply_state({"schema_version": 1, "effects": [{"effect_id": "missing", "stacks": 1}]})
+                _assert_bool(not bool(malformed_state.get("ok", true)), "unknown saved effect should fail", errors)
+                var negative_delta_events: Array = effects.update_effects(-1.0)
+                _assert_bool(not bool(negative_delta_events[0].get("ok", true)), "negative delta should fail", errors)
+                var infinite_delta_events: Array = effects.update_effects(INF)
+                _assert_bool(not infinite_delta_events.is_empty(), "infinite delta should return an error event", errors)
+                if not infinite_delta_events.is_empty():
+                    _assert_bool(not bool(infinite_delta_events[0].get("ok", true)), "infinite delta should fail", errors)
+                var invalid_overlay_result: Dictionary = effects.add_effect("haste", self, 1, {"node": self})
+                _assert_bool(not bool(invalid_overlay_result.get("ok", true)), "non-json overlay data should fail", errors)
+                var string_schema_state: Dictionary = effects.apply_state({"schema_version": "1", "effects": []})
+                _assert_bool(not bool(string_schema_state.get("ok", true)), "string schema_version should fail", errors)
+                var invalid_state_data: Dictionary = effects.apply_state({"schema_version": 1, "effects": [{"effect_id": "poison", "stacks": 1, "remaining_duration": 1.0, "elapsed_time": 0.0, "tick_elapsed": 0.0, "data": {"node": self}}]})
+                _assert_bool(not bool(invalid_state_data.get("ok", true)), "non-json saved effect data should fail", errors)
+                var excessive_tick_state: Dictionary = effects.apply_state({"schema_version": 1, "effects": [{"effect_id": "poison", "stacks": 1, "remaining_duration": 1.0, "elapsed_time": 0.0, "tick_elapsed": 100.0, "data": {}}]})
+                _assert_bool(not bool(excessive_tick_state.get("ok", true)), "excessive saved tick_elapsed should fail", errors)
+                var no_tick_elapsed_state: Dictionary = effects.apply_state({"schema_version": 1, "effects": [{"effect_id": "haste", "stacks": 1, "remaining_duration": 1.0, "elapsed_time": 0.0, "tick_elapsed": 1.0, "data": {}}]})
+                _assert_bool(not bool(no_tick_elapsed_state.get("ok", true)), "no-tick effect saved tick_elapsed should fail", errors)
+                var timed_permanent_state: Dictionary = effects.apply_state({"schema_version": 1, "effects": [{"effect_id": "poison", "stacks": 1, "remaining_duration": -1.0, "elapsed_time": 0.0, "tick_elapsed": 0.0, "data": {}}]})
+                _assert_bool(not bool(timed_permanent_state.get("ok", true)), "timed effect saved as permanent should fail", errors)
+                var permanent_timed_state: Dictionary = effects.apply_state({"schema_version": 1, "effects": [{"effect_id": "shielded", "stacks": 1, "remaining_duration": 1.0, "elapsed_time": 0.0, "tick_elapsed": 0.0, "data": {}}]})
+                _assert_bool(not bool(permanent_timed_state.get("ok", true)), "permanent effect saved as timed should fail", errors)
+                var too_long_timed_state: Dictionary = effects.apply_state({"schema_version": 1, "effects": [{"effect_id": "poison", "stacks": 1, "remaining_duration": 6.0, "elapsed_time": 0.0, "tick_elapsed": 0.0, "data": {}}]})
+                _assert_bool(not bool(too_long_timed_state.get("ok", true)), "timed effect saved beyond definition duration should fail", errors)
+
+                return {
+                    "ok": errors.is_empty(),
+                    "errors": errors,
+                    "add_haste": add_haste,
+                    "refresh_haste": refresh_haste,
+                    "haste_stacks": 1,
+                    "add_poison": add_poison,
+                    "poison_stacks": 3,
+                    "tick_count": tick_count,
+                    "has_haste_after_expire": has_haste_after_expire,
+                    "has_shielded_after_update": has_shielded_after_update,
+                    "apply_result": apply_result,
+                    "float_schema_result": float_schema_result,
+                    "round_trip_poison_stacks": 2,
+                    "remove_one": remove_one,
+                    "remove_all": remove_all,
+                    "unknown_result": unknown_result,
+                    "bad_stacks_result": bad_stacks_result,
+                    "malformed_state": malformed_state,
+                    "negative_delta_event": negative_delta_events[0],
+                    "add_short_tick": add_short_tick,
+                    "short_tick_events": short_tick_events,
+                    "invalid_overlay_result": invalid_overlay_result,
+                    "string_schema_state": string_schema_state,
+                    "invalid_state_data": invalid_state_data,
+                    "infinite_delta_event": infinite_delta_events[0] if not infinite_delta_events.is_empty() else {},
+                    "excessive_tick_state": excessive_tick_state,
+                    "no_tick_elapsed_state": no_tick_elapsed_state,
+                    "timed_permanent_state": timed_permanent_state,
+                    "permanent_timed_state": permanent_timed_state,
+                    "too_long_timed_state": too_long_timed_state,
+                }
+
+
+            func _count_events(events: Array, event_type: String) -> int:
+                var count := 0
+                for event in events:
+                    if String(event.get("type", "")) == event_type:
+                        count += 1
+                return count
+
+
+            func _count_events_for_effect(events: Array, event_type: String, effect_id: String) -> int:
+                var count := 0
+                for event in events:
+                    if String(event.get("type", "")) == event_type and String(event.get("effect_id", "")) == effect_id:
+                        count += 1
+                return count
+
+
+            func _assert_bool(value: bool, message: String, errors: Array[String]) -> void:
+                if not value:
+                    errors.append(message)
+
+
+            func _assert_int(expected: int, actual: int, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %d, got %d" % [label, expected, actual])
+
+
+            func _assert_float(expected: float, actual: float, label: String, errors: Array[String]) -> void:
+                if absf(expected - actual) > 0.001:
+                    errors.append("%s: expected %.3f, got %.3f" % [label, expected, actual])
+            """
+        ),
+        encoding="utf-8",
+    )
+    (scenes_dir / "effect_container_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=4 format=3]
+
+            [ext_resource type="Script" path="res://scripts/effect_container_probe.gd" id="1_probe"]
+            [ext_resource type="Script" path="res://addons/effects/effect_container.gd" id="2_container"]
+            [ext_resource type="Resource" path="res://resources/effects_probe/effect_database.tres" id="3_database"]
+
+            [node name="EffectContainerProbe" type="Node"]
+            script = ExtResource("1_probe")
+
+            [node name="EffectContainer" type="Node" parent="."]
+            script = ExtResource("2_container")
+            database = ExtResource("3_database")
+            save_id = &"probe_effects"
+            auto_update = false
             """
         ),
         encoding="utf-8",

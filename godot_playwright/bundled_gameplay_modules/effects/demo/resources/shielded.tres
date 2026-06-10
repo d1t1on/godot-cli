@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="EffectDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/effects/effect_definition.gd" id="1_shielded_script"]
+
+[resource]
+script = ExtResource("1_shielded_script")
+effect_id = &"shielded"
+display_name = "Shielded"
+description = "A permanent defensive marker."
+tags = Array[StringName]([&"buff", &"defense"])
+duration = 0.0
+tick_interval = 0.0
+stack_mode = "ignore"
+max_stacks = 1
+default_data = {"armor_bonus": 3}
