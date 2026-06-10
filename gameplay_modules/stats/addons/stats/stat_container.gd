@@ -130,8 +130,6 @@ func apply_state(data: Dictionary) -> Dictionary:
 	var parsed := _parse_state(data, result)
 	if not bool(result.get("ok", false)):
 		return result
-	var previous_ids: Array[String] = []
-	previous_ids.assign(_stat_ids)
 	_stats_by_id = parsed["stats_by_id"]
 	_stat_ids = parsed["stat_ids"]
 	_initialized = true
@@ -250,7 +248,7 @@ func _validate_stat_mutation(result: Dictionary, stat_id: String) -> bool:
 		StatResultData.add_error(result, "stat_id must be non-empty")
 	if not _validate_database(result):
 		return false
-	if result["ok"] and not _stats_by_id.has(stat_id):
+	if result["ok"] and (not _stats_by_id.has(stat_id) or not bool(database.call("has_stat", stat_id))):
 		StatResultData.add_error(result, "Unknown stat_id: %s" % stat_id)
 	return bool(result["ok"])
 
@@ -362,10 +360,11 @@ func _parse_state(data: Dictionary, result: Dictionary) -> Dictionary:
 			next_ids.append(database_id)
 		else:
 			var definition: Resource = database.call("get_stat", database_id)
+			var default_base_value := _clamp_base_value(definition, float(definition.default_base_value), null)
 			next_by_id[database_id] = {
 				"stat_id": database_id,
-				"base_value": _clamp_base_value(definition, float(definition.default_base_value), null),
-				"current_value": _clamp_current_value(definition, float(definition.default_current_value), float(definition.default_base_value), null),
+				"base_value": default_base_value,
+				"current_value": _clamp_current_value(definition, float(definition.default_current_value), default_base_value, null),
 			}
 			next_ids.append(database_id)
 	if bool(result.get("ok", false)):
