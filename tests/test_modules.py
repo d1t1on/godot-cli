@@ -2159,6 +2159,24 @@ def _write_abilities_database_probe(project: Path) -> None:
                 boolean_costs_database.abilities.append(boolean_costs)
                 _assert_error(boolean_costs_database.validate(), "scalar costs must be finite numbers", "boolean costs", errors)
 
+                var cyclic_data_value := {}
+                cyclic_data_value["self"] = cyclic_data_value
+                var cyclic_data := AbilityDefinitionData.new()
+                cyclic_data.ability_id = &"cyclic_data"
+                cyclic_data.default_data = cyclic_data_value
+                var cyclic_data_database := AbilityDatabaseData.new()
+                cyclic_data_database.abilities.append(cyclic_data)
+                _assert_error(cyclic_data_database.validate(), "default_data must be JSON-compatible", "cyclic default_data", errors)
+
+                var cyclic_costs_value := {}
+                cyclic_costs_value["self"] = cyclic_costs_value
+                var cyclic_costs := AbilityDefinitionData.new()
+                cyclic_costs.ability_id = &"cyclic_costs"
+                cyclic_costs.costs = cyclic_costs_value
+                var cyclic_costs_database := AbilityDatabaseData.new()
+                cyclic_costs_database.abilities.append(cyclic_costs)
+                _assert_error(cyclic_costs_database.validate(), "costs must be JSON-compatible", "cyclic costs", errors)
+
                 return {"ok": errors.is_empty(), "errors": errors}
 
 

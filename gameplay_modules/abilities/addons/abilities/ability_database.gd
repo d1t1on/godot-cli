@@ -102,6 +102,10 @@ func _definition_or_null(ability: Resource):
 
 
 func _is_json_compatible(value: Variant) -> bool:
+	return _is_json_compatible_recursive(value, [])
+
+
+func _is_json_compatible_recursive(value: Variant, containers: Array) -> bool:
 	var value_type := typeof(value)
 	if value == null:
 		return true
@@ -111,17 +115,35 @@ func _is_json_compatible(value: Variant) -> bool:
 		var number := float(value)
 		return not is_nan(number) and not is_inf(number)
 	if value is Array:
+		if _contains_same_container(containers, value):
+			return false
+		containers.append(value)
 		for item in value:
-			if not _is_json_compatible(item):
+			if not _is_json_compatible_recursive(item, containers):
+				containers.pop_back()
 				return false
+		containers.pop_back()
 		return true
 	if value is Dictionary:
+		if _contains_same_container(containers, value):
+			return false
+		containers.append(value)
 		for key in value.keys():
 			if typeof(key) != TYPE_STRING and typeof(key) != TYPE_STRING_NAME:
+				containers.pop_back()
 				return false
-			if not _is_json_compatible(value[key]):
+			if not _is_json_compatible_recursive(value[key], containers):
+				containers.pop_back()
 				return false
+		containers.pop_back()
 		return true
+	return false
+
+
+func _contains_same_container(containers: Array, value: Variant) -> bool:
+	for container in containers:
+		if is_same(container, value):
+			return true
 	return false
 
 
