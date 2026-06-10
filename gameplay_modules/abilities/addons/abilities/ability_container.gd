@@ -142,7 +142,7 @@ func update_abilities(delta: float) -> Array[Dictionary]:
 	if is_nan(delta) or is_inf(delta) or delta < 0.0:
 		events.append({
 			"ok": false,
-			"type": "error",
+			"type": "ability_update_failed",
 			"ability_id": "",
 			"warnings": [],
 			"errors": ["delta must be finite and zero or greater"],
@@ -175,21 +175,7 @@ func get_state() -> Dictionary:
 
 func apply_state(data: Dictionary) -> Dictionary:
 	var result := AbilityResultData.make(true)
-	var parsed := _parse_state(data, result)
-	if not bool(result.get("ok", false)):
-		return result
-	_abilities_by_id = parsed["abilities_by_id"]
-	_ability_ids = parsed["ability_ids"]
-	_initialized = true
-	var event := {
-		"ok": true,
-		"type": "state_applied",
-		"abilities": get_abilities(),
-		"warnings": [],
-		"errors": [],
-	}
-	AbilityResultData.add_event(result, event)
-	abilities_changed.emit(event)
+	AbilityResultData.add_error(result, "apply_state is not implemented yet")
 	return result
 
 
@@ -381,86 +367,6 @@ func _copy_runtime(ability_id: String) -> Dictionary:
 	return (_abilities_by_id[ability_id] as Dictionary).duplicate(true)
 
 
-func _parse_state(data: Dictionary, result: Dictionary) -> Dictionary:
-	var parsed := {"abilities_by_id": {}, "ability_ids": []}
-	var saved_schema := _parse_integer_field(data.get("schema_version", null), "schema_version", result)
-	if saved_schema != AbilityConstantsData.SCHEMA_VERSION:
-		AbilityResultData.add_error(result, "schema_version must be %d" % AbilityConstantsData.SCHEMA_VERSION)
-	var raw_abilities = data.get("abilities", null)
-	if not (raw_abilities is Array):
-		AbilityResultData.add_error(result, "abilities must be an Array")
-		return parsed
-	if not _validate_database(result):
-		return parsed
-
-	var seen := {}
-	var next_by_id := {}
-	var saved_abilities: Array = raw_abilities
-	for index in range(saved_abilities.size()):
-		var value = saved_abilities[index]
-		if not (value is Dictionary):
-			AbilityResultData.add_error(result, "abilities[%d] must be a Dictionary" % index)
-			continue
-		var ability: Dictionary = value
-		var ability_error_count := (result.get("errors", []) as Array).size()
-		var raw_ability_id = ability.get("ability_id", "")
-		if typeof(raw_ability_id) != TYPE_STRING and typeof(raw_ability_id) != TYPE_STRING_NAME:
-			AbilityResultData.add_error(result, "abilities[%d].ability_id must be a string" % index)
-			continue
-		var ability_id := String(raw_ability_id)
-		var normalized := ability_id.strip_edges()
-		if normalized.is_empty():
-			AbilityResultData.add_error(result, "abilities[%d].ability_id must be non-empty" % index)
-			continue
-		if normalized != ability_id:
-			AbilityResultData.add_error(result, "abilities[%d].ability_id must not contain leading or trailing whitespace" % index)
-			continue
-		if seen.has(normalized):
-			AbilityResultData.add_error(result, "Duplicate ability_id: %s" % normalized)
-			continue
-		if not bool(database.call("has_ability", normalized)):
-			AbilityResultData.add_error(result, "Unknown ability_id: %s" % normalized)
-			continue
-		seen[normalized] = true
-
-		var definition: Resource = database.call("get_ability", normalized)
-		var enabled := _parse_bool_field(ability.get("enabled", null), "abilities[%d].enabled" % index, result)
-		var cooldown_remaining := _parse_float_field(ability.get("cooldown_remaining", null), "abilities[%d].cooldown_remaining" % index, result)
-		var charges := _parse_integer_field(ability.get("charges", null), "abilities[%d].charges" % index, result)
-		var charge_recovery_remaining := _parse_float_field(ability.get("charge_recovery_remaining", null), "abilities[%d].charge_recovery_remaining" % index, result)
-		if cooldown_remaining < 0.0:
-			AbilityResultData.add_error(result, "abilities[%d].cooldown_remaining must be zero or greater" % index)
-		if charges < 0:
-			AbilityResultData.add_error(result, "abilities[%d].charges must be zero or greater" % index)
-		if charges > int(definition.max_charges):
-			AbilityResultData.add_error(result, "abilities[%d].charges exceeds max_charges for ability_id: %s" % [index, normalized])
-		if charge_recovery_remaining < 0.0:
-			AbilityResultData.add_error(result, "abilities[%d].charge_recovery_remaining must be zero or greater" % index)
-		if charges >= int(definition.max_charges) and charge_recovery_remaining > 0.0:
-			AbilityResultData.add_error(result, "abilities[%d].charge_recovery_remaining must be zero at max charges" % index)
-		if (result.get("errors", []) as Array).size() == ability_error_count:
-			next_by_id[normalized] = {
-				"ability_id": normalized,
-				"enabled": enabled,
-				"cooldown_remaining": cooldown_remaining,
-				"charges": charges,
-				"charge_recovery_remaining": charge_recovery_remaining,
-			}
-
-	var next_ids: Array[String] = []
-	for database_id in database.call("get_ability_ids"):
-		if next_by_id.has(database_id):
-			next_ids.append(database_id)
-		else:
-			var definition: Resource = database.call("get_ability", database_id)
-			next_by_id[database_id] = _make_runtime_entry(database_id, definition)
-			next_ids.append(database_id)
-	if bool(result.get("ok", false)):
-		parsed["abilities_by_id"] = next_by_id
-		parsed["ability_ids"] = next_ids
-	return parsed
-
-
 func _parse_integer_field(value: Variant, field_name: String, result: Dictionary) -> int:
 	if typeof(value) == TYPE_INT:
 		return int(value)
@@ -470,22 +376,6 @@ func _parse_integer_field(value: Variant, field_name: String, result: Dictionary
 			return int(float_value)
 	AbilityResultData.add_error(result, "%s must be an integer" % field_name)
 	return 0
-
-
-func _parse_float_field(value: Variant, field_name: String, result: Dictionary) -> float:
-	if typeof(value) == TYPE_INT or typeof(value) == TYPE_FLOAT:
-		var number := float(value)
-		if not is_nan(number) and not is_inf(number):
-			return number
-	AbilityResultData.add_error(result, "%s must be a finite number" % field_name)
-	return 0.0
-
-
-func _parse_bool_field(value: Variant, field_name: String, result: Dictionary) -> bool:
-	if typeof(value) == TYPE_BOOL:
-		return bool(value)
-	AbilityResultData.add_error(result, "%s must be a bool" % field_name)
-	return false
 
 
 func _is_json_compatible(value: Variant) -> bool:

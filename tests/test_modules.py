@@ -2309,8 +2309,7 @@ def _write_abilities_container_probe(project: Path) -> None:
                 var can_dash: Dictionary = container.can_activate("dash", {"actor_id": "probe"})
                 _assert_ok(can_dash, "can_activate dash", errors)
                 var after_can_dash: Dictionary = container.get_ability_runtime("dash")
-                _assert_int(int(before_can_dash.get("charges", -1)), int(after_can_dash.get("charges", -2)), "can_activate should not spend charges", errors)
-                _assert_float(float(before_can_dash.get("cooldown_remaining", -1.0)), float(after_can_dash.get("cooldown_remaining", -2.0)), "can_activate should not start cooldown", errors)
+                _assert_runtime_equal(before_can_dash, after_can_dash, "can_activate should not mutate dash", errors)
 
                 var dash_context := {"actor_id": "probe", "target": [1.0, 2.0]}
                 var activate_dash: Dictionary = container.activate("dash", dash_context)
@@ -2358,6 +2357,7 @@ def _write_abilities_container_probe(project: Path) -> None:
                 _assert_int(1, negative_events.size(), "negative delta event count", errors)
                 if negative_events.size() == 1:
                     _assert_error(negative_events[0], "delta", "negative delta event", errors)
+                    _assert_string("ability_update_failed", String(negative_events[0].get("type", "")), "negative delta event type", errors)
                 _assert_runtime_arrays_equal(before_negative, container.get_abilities(), "negative delta should not mutate state", errors)
 
                 return {"ok": errors.is_empty(), "errors": errors}
@@ -2421,11 +2421,15 @@ def _write_abilities_container_probe(project: Path) -> None:
                 for index in range(expected.size()):
                     var expected_runtime: Dictionary = expected[index]
                     var actual_runtime: Dictionary = actual[index]
-                    _assert_string(String(expected_runtime.get("ability_id", "")), String(actual_runtime.get("ability_id", "")), "%s ability_id %d" % [label, index], errors)
-                    _assert_bool(bool(expected_runtime.get("enabled", false)) == bool(actual_runtime.get("enabled", true)), "%s enabled %d" % [label, index], errors)
-                    _assert_int(int(expected_runtime.get("charges", -1)), int(actual_runtime.get("charges", -2)), "%s charges %d" % [label, index], errors)
-                    _assert_float(float(expected_runtime.get("cooldown_remaining", -1.0)), float(actual_runtime.get("cooldown_remaining", -2.0)), "%s cooldown %d" % [label, index], errors)
-                    _assert_float(float(expected_runtime.get("charge_recovery_remaining", -1.0)), float(actual_runtime.get("charge_recovery_remaining", -2.0)), "%s recovery %d" % [label, index], errors)
+                    _assert_runtime_equal(expected_runtime, actual_runtime, "%s %d" % [label, index], errors)
+
+
+            func _assert_runtime_equal(expected_runtime: Dictionary, actual_runtime: Dictionary, label: String, errors: Array[String]) -> void:
+                _assert_string(String(expected_runtime.get("ability_id", "")), String(actual_runtime.get("ability_id", "")), "%s ability_id" % label, errors)
+                _assert_bool(bool(expected_runtime.get("enabled", false)) == bool(actual_runtime.get("enabled", true)), "%s enabled" % label, errors)
+                _assert_int(int(expected_runtime.get("charges", -1)), int(actual_runtime.get("charges", -2)), "%s charges" % label, errors)
+                _assert_float(float(expected_runtime.get("cooldown_remaining", -1.0)), float(actual_runtime.get("cooldown_remaining", -2.0)), "%s cooldown" % label, errors)
+                _assert_float(float(expected_runtime.get("charge_recovery_remaining", -1.0)), float(actual_runtime.get("charge_recovery_remaining", -2.0)), "%s recovery" % label, errors)
 
 
             func _assert_bool(value: bool, message: String, errors: Array[String]) -> void:
