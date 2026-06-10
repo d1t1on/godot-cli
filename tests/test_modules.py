@@ -398,6 +398,28 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn("class_name InventoryResult", result)
         self.assertIn("static func add_error", result)
 
+    def test_stats_source_defines_resource_helpers(self) -> None:
+        source_root = default_module_roots()[0]
+        stats_root = source_root / "stats" / "addons" / "stats"
+        definition = (stats_root / "stat_definition.gd").read_text(encoding="utf-8")
+        database = (stats_root / "stat_database.gd").read_text(encoding="utf-8")
+        result = (stats_root / "stat_result.gd").read_text(encoding="utf-8")
+
+        self.assertIn("class_name StatDefinition", definition)
+        self.assertIn("@export var stat_id: StringName", definition)
+        self.assertIn("@export var default_base_value: float = 0.0", definition)
+        self.assertIn("@export var default_current_value: float = 0.0", definition)
+        self.assertIn("@export var is_pool: bool = false", definition)
+        self.assertIn("class_name StatDatabase", database)
+        self.assertIn("func get_stat(stat_id: String) -> Resource", database)
+        self.assertIn("func has_stat(stat_id: String) -> bool", database)
+        self.assertIn("func get_stat_ids() -> Array[String]", database)
+        self.assertIn("func validate() -> Dictionary", database)
+        self.assertIn("Duplicate stat_id", database)
+        self.assertIn("class_name StatResult", result)
+        self.assertIn("static func add_error", result)
+        self.assertIn('"events": []', result)
+
     def test_inventory_source_defines_core_stack_api(self) -> None:
         source_root = default_module_roots()[0]
         inventory_source = (source_root / "inventory" / "addons" / "inventory" / "inventory.gd").read_text(

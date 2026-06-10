@@ -19,6 +19,10 @@ static func make(ok: bool, stat_id: String = "") -> Dictionary:
 	}
 
 
+static func add_event(result: Dictionary, event: Dictionary) -> void:
+	(result["events"] as Array).append(event)
+
+
 static func add_warning(result: Dictionary, message: String) -> void:
 	(result["warnings"] as Array).append(message)
 
