@@ -816,6 +816,23 @@ def _write_module_fixture(module_root: Path) -> Path:
 
 
 @unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
+class StatsModuleGodotTests(unittest.TestCase):
+    def test_installed_stats_addon_scripts_are_valid(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Stats Parse Probe")
+            add_module(project, "stats")
+
+            report = check_project_scripts(
+                project,
+                ["res://addons/stats"],
+                artifacts_dir=root / "artifacts",
+            )
+
+        self.assertTrue(report["ok"], report["diagnostics"])
+
+
+@unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
 class InteractionSeedModuleGodotTests(unittest.TestCase):
     def test_installed_interaction_seed_demo_scene_loads(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

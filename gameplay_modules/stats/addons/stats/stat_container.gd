@@ -277,7 +277,7 @@ func _ensure_initialized() -> void:
 		initialize_stats()
 
 
-func _clamp_base_value(definition: Resource, value: float, result: Dictionary) -> float:
+func _clamp_base_value(definition: Resource, value: float, result: Variant) -> float:
 	var applied := value
 	if bool(definition.clamp_min):
 		applied = maxf(applied, float(definition.min_value))
@@ -289,7 +289,7 @@ func _clamp_base_value(definition: Resource, value: float, result: Dictionary) -
 	return applied
 
 
-func _clamp_current_value(definition: Resource, value: float, base_value: float, result: Dictionary) -> float:
+func _clamp_current_value(definition: Resource, value: float, base_value: float, result: Variant) -> float:
 	var applied := value
 	if bool(definition.clamp_min):
 		applied = maxf(applied, float(definition.min_value))
