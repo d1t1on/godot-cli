@@ -586,6 +586,8 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn("godot-playwright module add /tmp/agent-game effects --demo", readme)
         self.assertIn("godot-playwright module add /tmp/agent-game stats", readme)
         self.assertIn("godot-playwright module add /tmp/agent-game stats --demo", readme)
+        self.assertIn("godot-playwright module add /tmp/agent-game abilities", readme)
+        self.assertIn("godot-playwright module add /tmp/agent-game abilities --demo", readme)
 
     def test_effects_docs_exist_for_humans_and_agents(self) -> None:
         source_root = default_module_roots()[0] / "effects"
@@ -600,6 +602,31 @@ class ModuleInstallerUnitTests(unittest.TestCase):
             self.assertIn("effect_id", agent)
             self.assertIn("auto_update", agent)
             self.assertIn("stats", agent)
+
+    def test_abilities_docs_exist_for_humans_and_agents(self) -> None:
+        source_root = default_module_roots()[0] / "abilities"
+        bundled_root = default_module_roots()[1] / "abilities"
+        for root in (source_root, bundled_root):
+            readme = (root / "README.md").read_text(encoding="utf-8")
+            agent = (root / "AGENT.md").read_text(encoding="utf-8")
+            self.assertIn("godot-playwright module add /path/to/project abilities", readme)
+            self.assertIn("godot-playwright module add /path/to/project abilities --demo", readme)
+            self.assertIn("AbilityContainer.activate", readme)
+            self.assertIn("AbilityContainer.can_activate", readme)
+            self.assertIn("AbilityDefinition", readme)
+            self.assertIn("cooldown", readme)
+            self.assertIn("charges", readme)
+            self.assertIn("costs are reported", readme)
+            self.assertIn("not automatically spent", readme)
+            self.assertIn("save_load", readme)
+            self.assertIn("state_machine", readme)
+            self.assertIn("godot-playwright check-scripts", readme)
+            self.assertIn("ability_id", agent)
+            self.assertIn("instant", agent)
+            self.assertIn("can_activate", agent)
+            self.assertIn("Do not store engine objects", agent)
+            self.assertIn("Do not use this module as a combat system", agent)
+            self.assertIn("save_participants", agent)
 
     def test_save_service_rejects_non_finite_float_states(self) -> None:
         source_root = default_module_roots()[0]
