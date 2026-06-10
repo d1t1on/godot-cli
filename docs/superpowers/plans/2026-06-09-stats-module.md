@@ -309,7 +309,12 @@ In `tests/test_modules.py`, add this method inside `ModuleInstallerUnitTests` ne
         self.assertIn("func get_stat_ids() -> Array[String]", database)
         self.assertIn("func validate() -> Dictionary", database)
         self.assertIn("Duplicate stat_id", database)
+        self.assertIn("ids.append(raw_stat_id)", database)
+        self.assertIn("_is_finite_number", database)
+        self.assertIn("default_base_value must be finite", database)
+        self.assertIn("min_value must be <= max_value", database)
         self.assertIn("class_name StatResult", result)
+        self.assertIn("static func add_event", result)
         self.assertIn("static func add_error", result)
         self.assertIn('"events": []', result)
 ```
@@ -400,9 +405,10 @@ func get_stat_ids() -> Array[String]:
 		var definition = _definition_or_null(stat)
 		if definition == null:
 			continue
-		var stat_id := String(definition.stat_id).strip_edges()
-		if not stat_id.is_empty():
-			ids.append(stat_id)
+		var raw_stat_id := String(definition.stat_id)
+		var stat_id := raw_stat_id.strip_edges()
+		if not stat_id.is_empty() and stat_id == raw_stat_id:
+			ids.append(raw_stat_id)
 	return ids
 
 

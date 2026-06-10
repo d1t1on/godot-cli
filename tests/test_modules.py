@@ -416,7 +416,12 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn("func get_stat_ids() -> Array[String]", database)
         self.assertIn("func validate() -> Dictionary", database)
         self.assertIn("Duplicate stat_id", database)
+        self.assertIn("ids.append(raw_stat_id)", database)
+        self.assertIn("_is_finite_number", database)
+        self.assertIn("default_base_value must be finite", database)
+        self.assertIn("min_value must be <= max_value", database)
         self.assertIn("class_name StatResult", result)
+        self.assertIn("static func add_event", result)
         self.assertIn("static func add_error", result)
         self.assertIn('"events": []', result)
 

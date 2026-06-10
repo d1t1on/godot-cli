@@ -30,9 +30,10 @@ func get_stat_ids() -> Array[String]:
 		var definition = _definition_or_null(stat)
 		if definition == null:
 			continue
-		var stat_id := String(definition.stat_id).strip_edges()
-		if not stat_id.is_empty():
-			ids.append(stat_id)
+		var raw_stat_id := String(definition.stat_id)
+		var stat_id := raw_stat_id.strip_edges()
+		if not stat_id.is_empty() and stat_id == raw_stat_id:
+			ids.append(raw_stat_id)
 	return ids
 
 
