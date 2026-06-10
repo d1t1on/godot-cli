@@ -337,6 +337,7 @@ func _advance_charge_recovery(ability_id: String, runtime: Dictionary, definitio
 			runtime["charge_recovery_remaining"] = 0.0
 			return
 		runtime["charge_recovery_remaining"] = 0.0
+		_start_charge_recovery(runtime, definition)
 
 
 func _emit_activation_failure_if_known(ability_id: String, result: Dictionary) -> void:

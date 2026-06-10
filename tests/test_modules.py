@@ -2291,19 +2291,33 @@ def _write_abilities_container_probe(project: Path) -> None:
             const AbilityDatabaseData := preload("res://addons/abilities/ability_database.gd")
             const AbilityContainerData := preload("res://addons/abilities/ability_container.gd")
 
+            var _activated_signals: Array = []
+            var _failed_signals: Array = []
+            var _enabled_signals: Array = []
+            var _cooldown_signals: Array = []
+            var _charge_signals: Array = []
+            var _changed_signals: Array = []
+
 
             func run_probe() -> Dictionary:
                 var errors: Array[String] = []
+                _clear_signal_records()
                 var database := _make_database()
                 var container := AbilityContainerData.new()
                 container.initialize_on_ready = false
                 container.auto_update = false
                 container.database = database
                 add_child(container)
+                container.ability_activated.connect(_record_activated)
+                container.ability_failed.connect(_record_failed)
+                container.ability_enabled_changed.connect(_record_enabled_changed)
+                container.ability_cooldown_ready.connect(_record_cooldown_ready)
+                container.ability_charge_recovered.connect(_record_charge_recovered)
+                container.abilities_changed.connect(_record_abilities_changed)
 
                 var init_result: Dictionary = container.initialize_abilities()
                 _assert_ok(init_result, "initialize_abilities", errors)
-                _assert_int(3, container.get_abilities().size(), "initialized ability count", errors)
+                _assert_int(4, container.get_abilities().size(), "initialized ability count", errors)
 
                 var before_can_dash: Dictionary = container.get_ability_runtime("dash")
                 var can_dash: Dictionary = container.can_activate("dash", {"actor_id": "probe"})
@@ -2317,6 +2331,9 @@ def _write_abilities_container_probe(project: Path) -> None:
                 _assert_float(20.0, float(activate_dash.get("costs", {}).get("stamina", 0.0)), "dash reported stamina cost", errors)
                 _assert_float(4.0, float(activate_dash.get("data", {}).get("range", 0.0)), "dash reported range data", errors)
                 _assert_string("probe", String(activate_dash.get("context", {}).get("actor_id", "")), "dash reported context", errors)
+                _assert_has_event(activate_dash.get("events", []), "ability_activated", "dash", "dash activation result event", errors)
+                _assert_signal_record(_activated_signals, 0, "dash", "dash activation signal", errors)
+                _assert_has_event(_changed_signals, "ability_activated", "dash", "dash changed signal event", errors)
                 var dash_runtime: Dictionary = container.get_ability_runtime("dash")
                 _assert_int(0, int(dash_runtime.get("charges", -1)), "dash charges after activation", errors)
                 _assert_float(0.5, float(dash_runtime.get("cooldown_remaining", -1.0)), "dash cooldown after activation", errors)
@@ -2324,6 +2341,8 @@ def _write_abilities_container_probe(project: Path) -> None:
                 var before_second_dash: Dictionary = container.get_ability_runtime("dash")
                 var second_dash: Dictionary = container.activate("dash")
                 _assert_error(second_dash, "cooldown", "second dash activation", errors)
+                _assert_has_event(second_dash.get("events", []), "ability_failed", "dash", "second dash failure result event", errors)
+                _assert_signal_record(_failed_signals, 0, "dash", "dash failure signal", errors)
                 var after_second_dash: Dictionary = container.get_ability_runtime("dash")
                 _assert_int(int(before_second_dash.get("charges", -1)), int(after_second_dash.get("charges", -2)), "failed dash should not spend charges", errors)
                 _assert_float(float(before_second_dash.get("cooldown_remaining", -1.0)), float(after_second_dash.get("cooldown_remaining", -2.0)), "failed dash should not change cooldown", errors)
@@ -2331,16 +2350,24 @@ def _write_abilities_container_probe(project: Path) -> None:
                 var dash_events: Array[Dictionary] = container.update_abilities(0.5)
                 _assert_has_event(dash_events, "ability_cooldown_ready", "dash", "dash cooldown ready event", errors)
                 _assert_has_event(dash_events, "ability_charge_recovered", "dash", "dash charge recovered event", errors)
+                _assert_signal_record(_cooldown_signals, 0, "dash", "dash cooldown ready signal", errors)
+                _assert_signal_record(_charge_signals, 0, "dash", "dash charge recovered signal", errors)
+                _assert_has_event(_changed_signals, "ability_cooldown_ready", "dash", "dash cooldown changed signal event", errors)
+                _assert_has_event(_changed_signals, "ability_charge_recovered", "dash", "dash charge changed signal event", errors)
                 var dash_after_update: Dictionary = container.get_ability_runtime("dash")
                 _assert_int(1, int(dash_after_update.get("charges", -1)), "dash charge recovered", errors)
                 _assert_float(0.0, float(dash_after_update.get("cooldown_remaining", -1.0)), "dash cooldown recovered", errors)
 
                 var disable_scan: Dictionary = container.set_enabled("scan", false)
                 _assert_ok(disable_scan, "disable scan", errors)
+                _assert_has_event(disable_scan.get("events", []), "ability_enabled_changed", "scan", "disable scan result event", errors)
+                _assert_enabled_signal(_enabled_signals, 0, "scan", false, "disable scan signal", errors)
                 _assert_bool(not container.is_enabled("scan"), "scan should be disabled", errors)
                 _assert_error(container.activate("scan"), "disabled", "disabled scan activation", errors)
                 var enable_scan: Dictionary = container.set_enabled("scan", true)
                 _assert_ok(enable_scan, "enable scan", errors)
+                _assert_has_event(enable_scan.get("events", []), "ability_enabled_changed", "scan", "enable scan result event", errors)
+                _assert_enabled_signal(_enabled_signals, 1, "scan", true, "enable scan signal", errors)
                 _assert_ok(container.activate("scan"), "enabled scan activation", errors)
 
                 _assert_ok(container.activate("repair"), "first repair", errors)
@@ -2352,6 +2379,17 @@ def _write_abilities_container_probe(project: Path) -> None:
                 var repair_after_update: Dictionary = container.get_ability_runtime("repair")
                 _assert_int(1, int(repair_after_update.get("charges", -1)), "repair recovered one charge", errors)
 
+                _assert_ok(container.activate("tri_repair"), "first tri_repair", errors)
+                _assert_ok(container.activate("tri_repair"), "second tri_repair", errors)
+                var tri_before_update: Dictionary = container.get_ability_runtime("tri_repair")
+                _assert_int(1, int(tri_before_update.get("charges", -1)), "tri_repair charges before recovery", errors)
+                _assert_float(0.25, float(tri_before_update.get("charge_recovery_remaining", -1.0)), "tri_repair recovery before update", errors)
+                var tri_events: Array[Dictionary] = container.update_abilities(0.25)
+                _assert_has_event(tri_events, "ability_charge_recovered", "tri_repair", "tri_repair charge recovered event", errors)
+                var tri_after_update: Dictionary = container.get_ability_runtime("tri_repair")
+                _assert_int(2, int(tri_after_update.get("charges", -1)), "tri_repair recovered one charge", errors)
+                _assert_float(0.25, float(tri_after_update.get("charge_recovery_remaining", -1.0)), "tri_repair next recovery started", errors)
+
                 var before_negative: Array = container.get_abilities()
                 var negative_events: Array[Dictionary] = container.update_abilities(-1.0)
                 _assert_int(1, negative_events.size(), "negative delta event count", errors)
@@ -2359,6 +2397,12 @@ def _write_abilities_container_probe(project: Path) -> None:
                     _assert_error(negative_events[0], "delta", "negative delta event", errors)
                     _assert_string("ability_update_failed", String(negative_events[0].get("type", "")), "negative delta event type", errors)
                 _assert_runtime_arrays_equal(before_negative, container.get_abilities(), "negative delta should not mutate state", errors)
+                _assert_int(6, _activated_signals.size(), "ability_activated signal count", errors)
+                _assert_int(2, _failed_signals.size(), "ability_failed signal count", errors)
+                _assert_int(2, _enabled_signals.size(), "ability_enabled_changed signal count", errors)
+                _assert_bool(_cooldown_signals.size() >= 1, "ability_cooldown_ready should emit", errors)
+                _assert_bool(_charge_signals.size() >= 3, "ability_charge_recovered should emit", errors)
+                _assert_bool(_changed_signals.size() >= 13, "abilities_changed should emit for runtime events", errors)
 
                 return {"ok": errors.is_empty(), "errors": errors}
 
@@ -2385,11 +2429,52 @@ def _write_abilities_container_probe(project: Path) -> None:
                 repair.charge_recovery_time = 0.25
                 repair.default_data = {"amount": 15.0}
 
+                var tri_repair := AbilityDefinitionData.new()
+                tri_repair.ability_id = &"tri_repair"
+                tri_repair.max_charges = 3
+                tri_repair.initial_charges = 3
+                tri_repair.charge_recovery_time = 0.25
+                tri_repair.default_data = {"amount": 5.0}
+
                 var database := AbilityDatabaseData.new()
                 database.abilities.append(dash)
                 database.abilities.append(scan)
                 database.abilities.append(repair)
+                database.abilities.append(tri_repair)
                 return database
+
+
+            func _clear_signal_records() -> void:
+                _activated_signals.clear()
+                _failed_signals.clear()
+                _enabled_signals.clear()
+                _cooldown_signals.clear()
+                _charge_signals.clear()
+                _changed_signals.clear()
+
+
+            func _record_activated(ability_id: String, result: Dictionary) -> void:
+                _activated_signals.append({"ability_id": ability_id, "result": result.duplicate(true)})
+
+
+            func _record_failed(ability_id: String, result: Dictionary) -> void:
+                _failed_signals.append({"ability_id": ability_id, "result": result.duplicate(true)})
+
+
+            func _record_enabled_changed(ability_id: String, enabled: bool, result: Dictionary) -> void:
+                _enabled_signals.append({"ability_id": ability_id, "enabled": enabled, "result": result.duplicate(true)})
+
+
+            func _record_cooldown_ready(ability_id: String, event: Dictionary) -> void:
+                _cooldown_signals.append({"ability_id": ability_id, "event": event.duplicate(true)})
+
+
+            func _record_charge_recovered(ability_id: String, charges: int, event: Dictionary) -> void:
+                _charge_signals.append({"ability_id": ability_id, "charges": charges, "event": event.duplicate(true)})
+
+
+            func _record_abilities_changed(event: Dictionary) -> void:
+                _changed_signals.append(event.duplicate(true))
 
 
             func _assert_ok(result: Dictionary, label: String, errors: Array[String]) -> void:
@@ -2430,6 +2515,21 @@ def _write_abilities_container_probe(project: Path) -> None:
                 _assert_int(int(expected_runtime.get("charges", -1)), int(actual_runtime.get("charges", -2)), "%s charges" % label, errors)
                 _assert_float(float(expected_runtime.get("cooldown_remaining", -1.0)), float(actual_runtime.get("cooldown_remaining", -2.0)), "%s cooldown" % label, errors)
                 _assert_float(float(expected_runtime.get("charge_recovery_remaining", -1.0)), float(actual_runtime.get("charge_recovery_remaining", -2.0)), "%s recovery" % label, errors)
+
+
+            func _assert_signal_record(records: Array, index: int, ability_id: String, label: String, errors: Array[String]) -> void:
+                if records.size() <= index:
+                    errors.append("%s missing signal record %d in %s" % [label, index, str(records)])
+                    return
+                _assert_string(ability_id, String(records[index].get("ability_id", "")), "%s ability_id" % label, errors)
+
+
+            func _assert_enabled_signal(records: Array, index: int, ability_id: String, enabled: bool, label: String, errors: Array[String]) -> void:
+                if records.size() <= index:
+                    errors.append("%s missing signal record %d in %s" % [label, index, str(records)])
+                    return
+                _assert_string(ability_id, String(records[index].get("ability_id", "")), "%s ability_id" % label, errors)
+                _assert_bool(bool(records[index].get("enabled", not enabled)) == enabled, "%s enabled" % label, errors)
 
 
             func _assert_bool(value: bool, message: String, errors: Array[String]) -> void:
