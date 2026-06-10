@@ -31,7 +31,7 @@ Each definition includes:
 - `initial_charges`: charges available when runtime state is initialized.
 - `charge_recovery_time`: seconds to recover one charge. Use `0.0` to fall back to `cooldown`.
 - `enabled_by_default`: whether the ability starts enabled.
-- `costs`: JSON-compatible cost data reported in activation results.
+- `costs`: JSON-compatible cost data reported in activation results; top-level scalar cost values must be finite numbers.
 - `default_data`: JSON-compatible ability data copied into query and activation results.
 
 Add definitions to an `AbilityDatabase` resource and assign that database to each `AbilityContainer` node.
@@ -52,11 +52,11 @@ AbilityContainer.get_state() -> Dictionary
 AbilityContainer.apply_state(data: Dictionary) -> Dictionary
 ```
 
-Mutating calls return dictionaries with `ok`, `warnings`, and `errors` fields. Ability query and activation results also include `ability_id`, `enabled`, `cooldown_remaining`, `charges`, `max_charges`, `charge_recovery_remaining`, `costs`, `data`, `context`, and `events`.
+Result dictionaries from `initialize_abilities()`, `can_activate()`, `activate()`, `set_enabled()`, and `apply_state()` include `ok`, `warnings`, and `errors` fields. Ability query and activation results also include `ability_id`, `enabled`, `cooldown_remaining`, `charges`, `max_charges`, `charge_recovery_remaining`, `costs`, `data`, `context`, and `events`. `update_abilities(delta)` returns event dictionaries for cooldown, charge recovery, or update-failed events.
 
 ## Instant Activation
 
-Abilities are instant in v1. Call `AbilityContainer.can_activate(ability_id, context)` before accepting input, AI, interaction, or UI requests. It validates the database, known `ability_id`, enabled state, cooldown, charges, and JSON-compatible `context` without mutating runtime state.
+Abilities are instant in v1. Call `AbilityContainer.can_activate(ability_id, context)` before accepting input, AI, interaction, or UI requests. It initializes runtime state if needed, then checks the database, known `ability_id`, enabled state, cooldown, charges, and JSON-compatible `context` without consuming charges or starting timers.
 
 Call `AbilityContainer.activate(ability_id, context)` only after the request is accepted. A successful activation consumes one charge when `max_charges > 0`, starts cooldown when `cooldown > 0.0`, starts charge recovery when needed, emits `ability_activated`, and reports an `ability_activated` event. A failed activation returns `ok: false` and emits `ability_failed` for known abilities.
 
