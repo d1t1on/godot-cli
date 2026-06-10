@@ -42,7 +42,9 @@ Use `Inventory` only when the project has installed the inventory module and an 
 
 The module does not require `SaveService`. For custom persistence, use `get_state()` and `apply_state(data)`.
 
-When the project uses `save_load`, set a stable `save_id` on stat containers that should persist. A non-empty `save_id` makes the node join the `save_participants` group and exposes wrappers compatible with `SaveService`.
+When the project uses `save_load`, set a stable `save_id` on stat containers that should persist. Set `save_id` in the scene/inspector or before the node enters the tree so the container joins the `save_participants` group and exposes wrappers compatible with `SaveService`.
+
+If assigning `save_id` dynamically after the node has entered the tree, also add the node to `save_participants` or otherwise wire persistence for that container.
 
 Do not set `save_id` on temporary enemies, stat previews, shop previews, or generated test containers unless they must persist.
 

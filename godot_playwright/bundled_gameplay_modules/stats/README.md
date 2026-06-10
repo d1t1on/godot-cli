@@ -66,13 +66,15 @@ Use signals for UI, death handling, exhaustion, low-resource logic, and tests. K
 
 ## Saving
 
-Use `get_state()` and `apply_state(data)` for JSON-compatible persistence. If the project also uses `save_load`, set a stable `save_id` on stat containers that should persist. A non-empty `save_id` makes the node join the `save_participants` group and exposes wrappers compatible with `SaveService`.
+Use `get_state()` and `apply_state(data)` for JSON-compatible persistence. If the project also uses `save_load`, set a stable `save_id` on stat containers that should persist. Set `save_id` in the scene/inspector or before the node enters the tree so the container joins the `save_participants` group and exposes wrappers compatible with `SaveService`.
+
+If you assign `save_id` dynamically after the node has entered the tree, also add the node to `save_participants` or otherwise wire persistence for that container.
 
 Do not set `save_id` on temporary previews, generated enemies, or UI-only containers unless they must persist.
 
 ## Optional Integration
 
-Inventory item-use scripts can call `modify_value()` after consuming an item. Interaction scripts can modify stats on use. State machines can query stats in guards. The future `effects` module can call stat mutation methods for direct tick consequences.
+Inventory item-use scripts can call `modify_value()` after consuming an item. Interaction scripts can modify stats on use. State machines can query stats in guards. Future effect systems should integrate through the public mutation APIs once their boundary is defined.
 
 The core module does not import or require `inventory`, `interaction`, `state_machine`, `effects`, or `save_load`.
 
