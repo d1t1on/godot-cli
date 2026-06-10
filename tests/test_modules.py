@@ -817,7 +817,7 @@ def _write_module_fixture(module_root: Path) -> Path:
 
 @unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
 class StatsModuleGodotTests(unittest.TestCase):
-    def test_installed_stats_addon_scripts_are_valid(self) -> None:
+    def test_installed_stats_scripts_parse(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             project = init_project(root / "project", name="Stats Parse Probe")
@@ -830,6 +830,46 @@ class StatsModuleGodotTests(unittest.TestCase):
             )
 
         self.assertTrue(report["ok"], report["diagnostics"])
+
+    def test_stats_database_validation_runs_in_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Stats Database Probe")
+            add_module(project, "stats")
+            _write_stats_database_probe(project)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/stats_database_probe.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#StatsDatabaseProbe").call("run_probe")
+
+        self.assertTrue(result["ok"], result)
+
+    def test_stats_container_operations_run_in_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Stats Container Probe")
+            add_module(project, "stats")
+            _write_stats_container_probe(project)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/stats_container_probe.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#StatsContainerProbe").call("run_probe")
+
+        self.assertTrue(result["ok"], result)
 
     def test_stats_container_review_regressions_are_validated(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1473,6 +1513,237 @@ def _write_interactable_probe(project: Path) -> None:
             [ext_resource type="Script" path="res://scripts/interactable_probe.gd" id="1_probe_script"]
 
             [node name="InteractableProbe" type="Node"]
+            script = ExtResource("1_probe_script")
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_stats_database_probe(project: Path) -> None:
+    (project / "scripts" / "stats_database_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            const StatDefinitionData := preload("res://addons/stats/stat_definition.gd")
+            const StatDatabaseData := preload("res://addons/stats/stat_database.gd")
+
+
+            func run_probe() -> Dictionary:
+                var errors: Array[String] = []
+                var health := StatDefinitionData.new()
+                health.stat_id = &"health"
+                health.display_name = "Health"
+                health.default_base_value = 100.0
+                health.default_current_value = 100.0
+                health.clamp_min = true
+                health.min_value = 0.0
+                health.is_pool = true
+
+                var stamina := StatDefinitionData.new()
+                stamina.stat_id = &"stamina"
+                stamina.display_name = "Stamina"
+                stamina.default_base_value = 50.0
+                stamina.default_current_value = 25.0
+                stamina.clamp_min = true
+                stamina.min_value = 0.0
+                stamina.is_pool = true
+
+                var database := StatDatabaseData.new()
+                database.stats = [health, stamina]
+                var valid_result: Dictionary = database.validate()
+                _assert_bool(bool(valid_result.get("ok", false)), "database should validate", errors)
+                _assert_bool(database.has_stat("health"), "database has health", errors)
+                _assert_bool(database.get_stat("missing") == null, "missing stat returns null", errors)
+                _assert_array(["health", "stamina"], database.get_stat_ids(), "stat id order", errors)
+
+                var duplicate := StatDefinitionData.new()
+                duplicate.stat_id = &"health"
+                var duplicate_database := StatDatabaseData.new()
+                duplicate_database.stats = [health, duplicate]
+                var duplicate_result: Dictionary = duplicate_database.validate()
+                _assert_bool(not bool(duplicate_result.get("ok", true)), "duplicate database should fail", errors)
+                _assert_contains(duplicate_result.get("errors", []), "Duplicate stat_id: health", "duplicate error", errors)
+
+                var bad_bounds := StatDefinitionData.new()
+                bad_bounds.stat_id = &"bad_bounds"
+                bad_bounds.clamp_min = true
+                bad_bounds.min_value = 10.0
+                bad_bounds.clamp_max = true
+                bad_bounds.max_value = 1.0
+                var bad_database := StatDatabaseData.new()
+                bad_database.stats = [bad_bounds]
+                var bad_result: Dictionary = bad_database.validate()
+                _assert_bool(not bool(bad_result.get("ok", true)), "bad bounds should fail", errors)
+                _assert_contains(bad_result.get("errors", []), "min_value must be <= max_value", "bad bounds error", errors)
+
+                return {"ok": errors.is_empty(), "errors": errors}
+
+
+            func _assert_bool(value: bool, message: String, errors: Array[String]) -> void:
+                if not value:
+                    errors.append(message)
+
+
+            func _assert_array(expected: Array, actual: Array, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %s, got %s" % [label, str(expected), str(actual)])
+
+
+            func _assert_contains(messages: Array, needle: String, label: String, errors: Array[String]) -> void:
+                for message in messages:
+                    if String(message).contains(needle):
+                        return
+                errors.append("%s: missing %s in %s" % [label, needle, str(messages)])
+            """
+        ),
+        encoding="utf-8",
+    )
+    (project / "scenes" / "stats_database_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://scripts/stats_database_probe.gd" id="1_probe_script"]
+
+            [node name="StatsDatabaseProbe" type="Node"]
+            script = ExtResource("1_probe_script")
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_stats_container_probe(project: Path) -> None:
+    (project / "scripts" / "stats_container_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            const StatDefinitionData := preload("res://addons/stats/stat_definition.gd")
+            const StatDatabaseData := preload("res://addons/stats/stat_database.gd")
+            const StatContainerData := preload("res://addons/stats/stat_container.gd")
+
+            var events: Array[String] = []
+
+
+            func run_probe() -> Dictionary:
+                var errors: Array[String] = []
+                var container := StatContainerData.new()
+                container.name = "Stats"
+                container.initialize_on_ready = false
+                add_child(container)
+                container.database = _make_database()
+                container.stat_depleted.connect(func(stat_id: String, _value: float, _result: Dictionary): events.append("depleted:%s" % stat_id))
+                container.stat_filled.connect(func(stat_id: String, _value: float, _result: Dictionary): events.append("filled:%s" % stat_id))
+
+                var init_result: Dictionary = container.initialize_stats()
+                _assert_ok(init_result, "initialize", errors)
+                _assert_float(100.0, container.get_base_value("health"), "health base", errors)
+                _assert_float(100.0, container.get_value("health"), "health current", errors)
+                _assert_float(4.0, container.get_value("move_speed"), "move speed current", errors)
+
+                var damage_result: Dictionary = container.modify_value("health", -25.0)
+                _assert_ok(damage_result, "damage", errors)
+                _assert_float(75.0, container.get_value("health"), "health after damage", errors)
+
+                var deplete_result: Dictionary = container.modify_value("health", -999.0)
+                _assert_ok(deplete_result, "deplete", errors)
+                _assert_bool(bool(deplete_result.get("clamped", false)), "deplete should clamp", errors)
+                _assert_float(0.0, container.get_value("health"), "health after depletion", errors)
+                _assert_contains(events, "depleted:health", "depletion event", errors)
+
+                var fill_result: Dictionary = container.set_value("health", 100.0)
+                _assert_ok(fill_result, "fill", errors)
+                _assert_contains(events, "filled:health", "fill event", errors)
+
+                var lower_base_result: Dictionary = container.set_base_value("health", 40.0)
+                _assert_ok(lower_base_result, "lower base", errors)
+                _assert_float(40.0, container.get_base_value("health"), "lowered base", errors)
+                _assert_float(40.0, container.get_value("health"), "pool current clamps to base", errors)
+
+                var speed_result: Dictionary = container.set_base_value("move_speed", 8.0)
+                _assert_ok(speed_result, "speed base", errors)
+                var speed_current_result: Dictionary = container.set_value("move_speed", 12.0)
+                _assert_ok(speed_current_result, "speed current", errors)
+                _assert_float(12.0, container.get_value("move_speed"), "non-pool current ignores base maximum", errors)
+
+                var saved_state: Dictionary = container.get_state()
+                container.set_value("health", 5.0)
+                container.set_value("move_speed", 1.0)
+                var restore_result: Dictionary = container.apply_state(saved_state)
+                _assert_ok(restore_result, "state restore", errors)
+                _assert_float(40.0, container.get_value("health"), "restored health", errors)
+                _assert_float(12.0, container.get_value("move_speed"), "restored move speed", errors)
+
+                var bad_result: Dictionary = container.set_value("missing", 1.0)
+                _assert_bool(not bool(bad_result.get("ok", true)), "missing stat should fail", errors)
+                _assert_contains(bad_result.get("errors", []), "Unknown stat_id: missing", "missing stat error", errors)
+
+                var bad_state := {"schema_version": 1, "stats": [{"stat_id": "health", "base_value": 100.0, "current_value": 500.0}]}
+                var bad_state_result: Dictionary = container.apply_state(bad_state)
+                _assert_bool(not bool(bad_state_result.get("ok", true)), "bad state should fail", errors)
+                _assert_float(40.0, container.get_value("health"), "bad state should not mutate", errors)
+
+                return {"ok": errors.is_empty(), "errors": errors, "events": events}
+
+
+            func _make_database() -> Resource:
+                var health := StatDefinitionData.new()
+                health.stat_id = &"health"
+                health.display_name = "Health"
+                health.default_base_value = 100.0
+                health.default_current_value = 100.0
+                health.clamp_min = true
+                health.min_value = 0.0
+                health.is_pool = true
+
+                var move_speed := StatDefinitionData.new()
+                move_speed.stat_id = &"move_speed"
+                move_speed.display_name = "Move Speed"
+                move_speed.default_base_value = 4.0
+                move_speed.default_current_value = 4.0
+                move_speed.clamp_min = true
+                move_speed.min_value = 0.0
+
+                var database := StatDatabaseData.new()
+                database.stats = [health, move_speed]
+                return database
+
+
+            func _assert_ok(result: Dictionary, label: String, errors: Array[String]) -> void:
+                if not bool(result.get("ok", false)):
+                    errors.append("%s failed: %s" % [label, str(result)])
+
+
+            func _assert_bool(value: bool, message: String, errors: Array[String]) -> void:
+                if not value:
+                    errors.append(message)
+
+
+            func _assert_float(expected: float, actual: float, label: String, errors: Array[String]) -> void:
+                if not is_equal_approx(expected, actual):
+                    errors.append("%s: expected %s, got %s" % [label, str(expected), str(actual)])
+
+
+            func _assert_contains(messages: Array, needle: String, label: String, errors: Array[String]) -> void:
+                for message in messages:
+                    if String(message).contains(needle):
+                        return
+                errors.append("%s: missing %s in %s" % [label, needle, str(messages)])
+            """
+        ),
+        encoding="utf-8",
+    )
+    (project / "scenes" / "stats_container_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://scripts/stats_container_probe.gd" id="1_probe_script"]
+
+            [node name="StatsContainerProbe" type="Node"]
             script = ExtResource("1_probe_script")
             """
         ),
