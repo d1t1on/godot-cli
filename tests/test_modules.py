@@ -267,6 +267,20 @@ class ModuleInstallerUnitTests(unittest.TestCase):
             self.assertTrue((project / "resources" / "effects_demo" / "effect_database.tres").exists())
             self.assertTrue((project / "tests" / "effects_demo" / "test_effects_demo.py").exists())
 
+    def test_add_abilities_module_with_demo_copies_demo_assets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = _write_project(root / "project")
+
+            report = add_module(project, "abilities", demo=True)
+
+            self.assertTrue(report["ok"], report)
+            self.assertTrue(report["demo"])
+            self.assertTrue((project / "scenes" / "abilities_demo" / "abilities_demo.tscn").exists())
+            self.assertTrue((project / "scripts" / "abilities_demo" / "abilities_demo.gd").exists())
+            self.assertTrue((project / "resources" / "abilities_demo" / "ability_database.tres").exists())
+            self.assertTrue((project / "tests" / "abilities_demo" / "test_abilities_demo.py").exists())
+
     def test_add_stats_module_with_demo_copies_demo_assets(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1172,6 +1186,70 @@ class AbilitiesModuleGodotTests(unittest.TestCase):
                 result = godot.locator("#AbilitiesContainerReviewProbe").call("run_probe")
 
         self.assertTrue(result["ok"], result)
+
+    def test_installed_abilities_scripts_parse(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Abilities Parse Probe")
+            add_module(project, "abilities", demo=True)
+
+            result = check_project_scripts(
+                project,
+                ["res://addons/abilities", "res://scripts/abilities_demo"],
+                exclude=["addons/godot_playwright/**"],
+            )
+
+            self.assertTrue(result["ok"], result["diagnostics"])
+
+    def test_installed_abilities_demo_resources_are_valid(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Abilities Resource Probe")
+            add_module(project, "abilities", demo=True)
+
+            result = check_project_resources(
+                project,
+                ["res://scenes/abilities_demo", "res://resources/abilities_demo"],
+                exclude=["addons/godot_playwright/**"],
+            )
+
+            self.assertTrue(result["ok"], result["diagnostics"])
+
+    def test_abilities_demo_runs_in_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Abilities Demo Probe")
+            add_module(project, "abilities", demo=True)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/abilities_demo/abilities_demo.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#AbilitiesDemo").call("run_abilities_demo")
+
+            self.assertTrue(result["ok"], result)
+
+    def test_installed_abilities_demo_test_runs_without_main_scene_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Abilities Demo Test Probe")
+            add_module(project, "abilities", demo=True)
+
+            result = run_tests(
+                project,
+                [project / "tests" / "abilities_demo"],
+                artifacts_dir=root / "artifacts",
+                trace="off",
+                timeout=30,
+            )
+
+            self.assertEqual(result["failed"], 0, result["tests"])
+            self.assertEqual(result["passed"], 1)
 
     def test_abilities_demo_integrates_with_save_load_when_installed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

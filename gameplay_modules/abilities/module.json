@@ -8,6 +8,14 @@
     {"from": "addons/abilities", "to": "addons/abilities"}
   ],
   "autoloads": [],
+  "demo": {
+    "copy": [
+      {"from": "demo/scenes", "to": "scenes/abilities_demo"},
+      {"from": "demo/scripts", "to": "scripts/abilities_demo"},
+      {"from": "demo/resources", "to": "resources/abilities_demo"},
+      {"from": "tests", "to": "tests/abilities_demo"}
+    ]
+  },
   "validation": {
     "commands": [
       "godot-playwright check-scripts /path/to/project res://addons/abilities --exclude addons/godot_playwright/**",
