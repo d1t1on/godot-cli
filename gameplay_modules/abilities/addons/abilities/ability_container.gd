@@ -460,6 +460,12 @@ func _parse_state(data: Dictionary, result: Dictionary) -> Dictionary:
 
 		var definition: Resource = database.call("get_ability", normalized)
 		var max_charges := int(definition.max_charges)
+		var cooldown := float(definition.cooldown)
+		if cooldown > 0.0:
+			if cooldown_remaining > cooldown:
+				AbilityResultData.add_error(result, "abilities[%d].cooldown_remaining exceeds cooldown for ability_id: %s" % [index, normalized])
+		elif cooldown_remaining > 0.0:
+			AbilityResultData.add_error(result, "abilities[%d].cooldown_remaining must be 0 when cooldown is 0 for ability_id: %s" % [index, normalized])
 		if max_charges > 0:
 			if charges > max_charges:
 				AbilityResultData.add_error(result, "abilities[%d].charges %d exceeds max_charges %d for ability_id: %s" % [index, charges, max_charges, normalized])
@@ -467,6 +473,12 @@ func _parse_state(data: Dictionary, result: Dictionary) -> Dictionary:
 			AbilityResultData.add_error(result, "abilities[%d].charges must be 0 when max_charges is 0 for ability_id: %s" % [index, normalized])
 		if charge_recovery_remaining > 0.0 and charges >= max_charges:
 			AbilityResultData.add_error(result, "abilities[%d].charge_recovery_remaining must be 0 when charges are at max for ability_id: %s" % [index, normalized])
+		var recovery_time := _effective_charge_recovery_time(definition)
+		if charge_recovery_remaining > 0.0:
+			if recovery_time <= 0.0:
+				AbilityResultData.add_error(result, "abilities[%d].charge_recovery_remaining must be 0 when ability has no charge recovery for ability_id: %s" % [index, normalized])
+			elif charge_recovery_remaining > recovery_time:
+				AbilityResultData.add_error(result, "abilities[%d].charge_recovery_remaining exceeds charge recovery time for ability_id: %s" % [index, normalized])
 
 		if (result.get("errors", []) as Array).size() == entry_error_count:
 			next_by_id[normalized] = {
@@ -499,6 +511,15 @@ func _parse_integer_field(value: Variant, field_name: String, result: Dictionary
 			return int(float_value)
 	AbilityResultData.add_error(result, "%s must be an integer" % field_name)
 	return 0
+
+
+func _effective_charge_recovery_time(definition: Resource) -> float:
+	if int(definition.max_charges) <= 0:
+		return 0.0
+	var recovery_time := float(definition.charge_recovery_time)
+	if recovery_time <= 0.0:
+		recovery_time = float(definition.cooldown)
+	return maxf(recovery_time, 0.0)
 
 
 func _is_finite_number(value: Variant) -> bool:

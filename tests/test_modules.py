@@ -2686,6 +2686,13 @@ def _write_abilities_container_review_probe(project: Path) -> None:
                     "charges": 0,
                     "charge_recovery_remaining": 0.0,
                 }
+                var valid_manual := {
+                    "ability_id": "manual",
+                    "enabled": true,
+                    "cooldown_remaining": 0.0,
+                    "charges": 2,
+                    "charge_recovery_remaining": 0.0,
+                }
                 var valid_dash := {
                     "ability_id": "dash",
                     "enabled": true,
@@ -2767,6 +2774,74 @@ def _write_abilities_container_review_probe(project: Path) -> None:
                             ],
                         },
                     },
+                    {
+                        "label": "cooldown exceeds definition",
+                        "state": {
+                            "schema_version": 1,
+                            "abilities": [
+                                {
+                                    "ability_id": "dash",
+                                    "enabled": true,
+                                    "cooldown_remaining": 0.75,
+                                    "charges": 0,
+                                    "charge_recovery_remaining": 0.5,
+                                },
+                                valid_scan,
+                                valid_manual,
+                            ],
+                        },
+                    },
+                    {
+                        "label": "positive cooldown without cooldown",
+                        "state": {
+                            "schema_version": 1,
+                            "abilities": [
+                                valid_dash,
+                                {
+                                    "ability_id": "scan",
+                                    "enabled": true,
+                                    "cooldown_remaining": 0.1,
+                                    "charges": 0,
+                                    "charge_recovery_remaining": 0.0,
+                                },
+                                valid_manual,
+                            ],
+                        },
+                    },
+                    {
+                        "label": "recovery exceeds interval",
+                        "state": {
+                            "schema_version": 1,
+                            "abilities": [
+                                {
+                                    "ability_id": "dash",
+                                    "enabled": true,
+                                    "cooldown_remaining": 0.5,
+                                    "charges": 0,
+                                    "charge_recovery_remaining": 0.75,
+                                },
+                                valid_scan,
+                                valid_manual,
+                            ],
+                        },
+                    },
+                    {
+                        "label": "positive recovery without recovery path",
+                        "state": {
+                            "schema_version": 1,
+                            "abilities": [
+                                valid_dash,
+                                valid_scan,
+                                {
+                                    "ability_id": "manual",
+                                    "enabled": true,
+                                    "cooldown_remaining": 0.0,
+                                    "charges": 1,
+                                    "charge_recovery_remaining": 0.1,
+                                },
+                            ],
+                        },
+                    },
                 ]
                 for entry in malformed_states:
                     var label := String(entry["label"])
@@ -2789,6 +2864,11 @@ def _write_abilities_container_review_probe(project: Path) -> None:
                 scan.max_charges = 0
                 scan.initial_charges = 0
 
+                var manual := AbilityDefinitionData.new()
+                manual.ability_id = &"manual"
+                manual.max_charges = 2
+                manual.initial_charges = 2
+
                 var database := AbilityDatabaseData.new()
                 database.abilities.append(dash)
                 if include_blink:
@@ -2800,6 +2880,7 @@ def _write_abilities_container_review_probe(project: Path) -> None:
                     database.abilities.append(blink)
                 else:
                     database.abilities.append(scan)
+                    database.abilities.append(manual)
                 return database
 
 
