@@ -67,6 +67,13 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertEqual(effects["godot_version"], ">=4.6")
         self.assertEqual(effects["autoloads"], [])
 
+    def test_repository_abilities_module_is_discoverable(self) -> None:
+        modules = list_modules()
+        abilities = next(module for module in modules if module["name"] == "abilities")
+        self.assertEqual(abilities["version"], "0.1.0")
+        self.assertEqual(abilities["godot_version"], ">=4.6")
+        self.assertEqual(abilities["autoloads"], [])
+
     def test_repository_stats_module_is_discoverable(self) -> None:
         modules = list_modules()
         stats = next(module for module in modules if module["name"] == "stats")
@@ -128,6 +135,34 @@ class ModuleInstallerUnitTests(unittest.TestCase):
             self.assertNotIn("EffectService", project_text)
             copied_targets = {entry["target"] for entry in report["copied"]}
             self.assertIn("res://addons/effects/effect_container.gd", copied_targets)
+
+    def test_add_abilities_module_copies_files_without_autoload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = _write_project(root / "project")
+
+            report = add_module(project, "abilities")
+
+            self.assertTrue(report["ok"], report)
+            self.assertFalse(report["demo"])
+            self.assertEqual(report["module"], "abilities")
+            self.assertEqual(report["autoloads"], [])
+            expected_scripts = {
+                "ability_constants.gd",
+                "ability_result.gd",
+                "ability_definition.gd",
+                "ability_database.gd",
+                "ability_container.gd",
+            }
+            for script_name in expected_scripts:
+                self.assertTrue((project / "addons" / "abilities" / script_name).exists(), script_name)
+            project_text = (project / "project.godot").read_text(encoding="utf-8")
+            self.assertNotIn("AbilityService", project_text)
+            copied_targets = {entry["target"] for entry in report["copied"]}
+            self.assertTrue(
+                {f"res://addons/abilities/{script_name}" for script_name in expected_scripts}.issubset(copied_targets),
+                copied_targets,
+            )
 
     def test_add_inventory_module_with_demo_copies_demo_assets(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

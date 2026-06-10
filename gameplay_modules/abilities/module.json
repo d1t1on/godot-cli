@@ -1,0 +1,17 @@
+{
+  "name": "abilities",
+  "version": "0.1.0",
+  "display_name": "Abilities",
+  "description": "Resource-driven instant ability and action container for Godot projects.",
+  "godot_version": ">=4.6",
+  "copy": [
+    {"from": "addons/abilities", "to": "addons/abilities"}
+  ],
+  "autoloads": [],
+  "validation": {
+    "commands": [
+      "godot-playwright check-scripts /path/to/project res://addons/abilities --exclude addons/godot_playwright/**",
+      "godot-playwright check-resources /path/to/project res://addons/abilities --exclude addons/godot_playwright/**"
+    ]
+  }
+}
