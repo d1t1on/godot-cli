@@ -454,6 +454,40 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn('"warnings": []', result)
         self.assertIn('"errors": []', result)
 
+    def test_stats_source_defines_container_api(self) -> None:
+        source_root = default_module_roots()[0]
+        container = (source_root / "stats" / "addons" / "stats" / "stat_container.gd").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("class_name StatContainer", container)
+        self.assertIn("@export var database: Resource", container)
+        self.assertIn("@export var save_id: StringName", container)
+        self.assertIn("@export var initialize_on_ready: bool = true", container)
+        self.assertIn("signal stat_changed", container)
+        self.assertIn("signal base_stat_changed", container)
+        self.assertIn("signal stat_depleted", container)
+        self.assertIn("signal stat_filled", container)
+        self.assertIn("signal stats_changed", container)
+        self.assertIn("func initialize_stats(reset: bool = false) -> Dictionary", container)
+        self.assertIn("func has_stat(stat_id: String) -> bool", container)
+        self.assertIn("func get_value(stat_id: String) -> float", container)
+        self.assertIn("func get_base_value(stat_id: String) -> float", container)
+        self.assertIn("func get_stat(stat_id: String) -> Dictionary", container)
+        self.assertIn("func get_stats() -> Array", container)
+        self.assertIn("func set_value(stat_id: String, value: float) -> Dictionary", container)
+        self.assertIn("func modify_value(stat_id: String, delta: float) -> Dictionary", container)
+        self.assertIn("func set_base_value(stat_id: String, value: float) -> Dictionary", container)
+        self.assertIn("func modify_base_value(stat_id: String, delta: float) -> Dictionary", container)
+        self.assertIn("func get_state() -> Dictionary", container)
+        self.assertIn("func apply_state(data: Dictionary) -> Dictionary", container)
+        self.assertIn("func get_save_id() -> String", container)
+        self.assertIn("func save_state() -> Dictionary", container)
+        self.assertIn("func load_state(data: Dictionary) -> void", container)
+        self.assertIn("StatConstantsData.SCHEMA_VERSION", container)
+        self.assertIn("is_pool", container)
+        self.assertIn("clamped", container)
+
     def test_inventory_source_defines_core_stack_api(self) -> None:
         source_root = default_module_roots()[0]
         inventory_source = (source_root / "inventory" / "addons" / "inventory" / "inventory.gd").read_text(
