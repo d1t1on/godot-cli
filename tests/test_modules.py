@@ -603,6 +603,45 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn("static func add_event", result)
         self.assertIn('const STACK_REFRESH: String = "refresh"', constants)
 
+    def test_abilities_source_defines_resource_helpers(self) -> None:
+        source_root = default_module_roots()[0]
+        abilities_root = source_root / "abilities" / "addons" / "abilities"
+        definition = (abilities_root / "ability_definition.gd").read_text(encoding="utf-8")
+        database = (abilities_root / "ability_database.gd").read_text(encoding="utf-8")
+        result = (abilities_root / "ability_result.gd").read_text(encoding="utf-8")
+        constants = (abilities_root / "ability_constants.gd").read_text(encoding="utf-8")
+
+        self.assertIn("class_name AbilityDefinition", definition)
+        self.assertIn("@export var ability_id: StringName", definition)
+        self.assertIn("@export var display_name: String", definition)
+        self.assertIn("@export_multiline var description: String", definition)
+        self.assertIn("@export var tags: Array[StringName] = []", definition)
+        self.assertIn("@export var cooldown: float = 0.0", definition)
+        self.assertIn("@export_range(0, 999, 1) var max_charges: int = 1", definition)
+        self.assertIn("@export_range(0, 999, 1) var initial_charges: int = 1", definition)
+        self.assertIn("@export var charge_recovery_time: float = 0.0", definition)
+        self.assertIn("@export var enabled_by_default: bool = true", definition)
+        self.assertIn("@export var costs: Dictionary = {}", definition)
+        self.assertIn("@export var default_data: Dictionary = {}", definition)
+        self.assertIn("class_name AbilityDatabase", database)
+        self.assertIn("func get_ability(ability_id: String) -> Resource", database)
+        self.assertIn("func has_ability(ability_id: String) -> bool", database)
+        self.assertIn("func get_ability_ids() -> Array[String]", database)
+        self.assertIn("func validate() -> Dictionary", database)
+        self.assertIn("abilities[%d] is null", database)
+        self.assertIn("must be an AbilityDefinition", database)
+        self.assertIn("ability_id must be non-empty", database)
+        self.assertIn("Duplicate ability_id", database)
+        self.assertIn("_is_json_compatible", database)
+        self.assertIn("class_name AbilityResult", result)
+        self.assertIn('"ability_id": ability_id', result)
+        self.assertIn('"costs": {}', result)
+        self.assertIn('"context": {}', result)
+        self.assertIn("static func add_event", result)
+        self.assertIn("static func add_warning", result)
+        self.assertIn("static func add_error", result)
+        self.assertIn("const SCHEMA_VERSION: int = 1", constants)
+
     def test_stats_source_defines_resource_helpers(self) -> None:
         source_root = default_module_roots()[0]
         stats_root = source_root / "stats" / "addons" / "stats"
@@ -1036,6 +1075,29 @@ def _write_module_fixture(module_root: Path) -> Path:
         encoding="utf-8",
     )
     return module_dir
+
+
+@unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
+class AbilitiesModuleGodotTests(unittest.TestCase):
+    def test_ability_database_validation_runs_in_godot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Abilities Database Probe")
+            add_module(project, "abilities")
+            _write_abilities_database_probe(project)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/abilities_database_probe.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#AbilitiesDatabaseProbe").call("run_probe")
+
+        self.assertTrue(result["ok"], result)
 
 
 @unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
@@ -1982,6 +2044,129 @@ def _write_interactable_probe(project: Path) -> None:
             [ext_resource type="Script" path="res://scripts/interactable_probe.gd" id="1_probe_script"]
 
             [node name="InteractableProbe" type="Node"]
+            script = ExtResource("1_probe_script")
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_abilities_database_probe(project: Path) -> None:
+    (project / "scripts" / "abilities_database_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            const AbilityDefinitionData := preload("res://addons/abilities/ability_definition.gd")
+            const AbilityDatabaseData := preload("res://addons/abilities/ability_database.gd")
+
+
+            func run_probe() -> Dictionary:
+                var errors: Array[String] = []
+                var dash := AbilityDefinitionData.new()
+                dash.ability_id = &"dash"
+                dash.cooldown = 0.5
+                dash.max_charges = 1
+                dash.initial_charges = 1
+                dash.costs = {"stamina": 20.0}
+                dash.default_data = {"range": 4.0}
+
+                var valid_database := AbilityDatabaseData.new()
+                valid_database.abilities.append(dash)
+                _assert_ok(valid_database.validate(), "valid database", errors)
+                _assert_bool(valid_database.has_ability("dash"), "has dash", errors)
+                _assert_string("dash", String(valid_database.get_ability("dash").ability_id), "dash lookup", errors)
+                _assert_int(1, valid_database.get_ability_ids().size(), "ability id count", errors)
+
+                var invalid_resource_database := AbilityDatabaseData.new()
+                invalid_resource_database.abilities.append(Resource.new())
+                _assert_error(invalid_resource_database.validate(), "must be an AbilityDefinition", "invalid resource", errors)
+
+                var empty_id := AbilityDefinitionData.new()
+                empty_id.ability_id = &""
+                var empty_database := AbilityDatabaseData.new()
+                empty_database.abilities.append(empty_id)
+                _assert_error(empty_database.validate(), "ability_id must be non-empty", "empty ability_id", errors)
+
+                var duplicate := AbilityDefinitionData.new()
+                duplicate.ability_id = &"dash"
+                var duplicate_database := AbilityDatabaseData.new()
+                duplicate_database.abilities.append(dash)
+                duplicate_database.abilities.append(duplicate)
+                _assert_error(duplicate_database.validate(), "Duplicate ability_id", "duplicate ability_id", errors)
+
+                var bad_cooldown := AbilityDefinitionData.new()
+                bad_cooldown.ability_id = &"bad_cooldown"
+                bad_cooldown.cooldown = -1.0
+                var cooldown_database := AbilityDatabaseData.new()
+                cooldown_database.abilities.append(bad_cooldown)
+                _assert_error(cooldown_database.validate(), "cooldown must be zero or greater", "bad cooldown", errors)
+
+                var bad_charges := AbilityDefinitionData.new()
+                bad_charges.ability_id = &"bad_charges"
+                bad_charges.max_charges = 1
+                bad_charges.initial_charges = 2
+                var charges_database := AbilityDatabaseData.new()
+                charges_database.abilities.append(bad_charges)
+                _assert_error(charges_database.validate(), "initial_charges must be <= max_charges", "bad charges", errors)
+
+                var bad_data := AbilityDefinitionData.new()
+                bad_data.ability_id = &"bad_data"
+                bad_data.default_data = {"node": self}
+                var data_database := AbilityDatabaseData.new()
+                data_database.abilities.append(bad_data)
+                _assert_error(data_database.validate(), "default_data must be JSON-compatible", "bad default_data", errors)
+
+                var bad_costs := AbilityDefinitionData.new()
+                bad_costs.ability_id = &"bad_costs"
+                bad_costs.costs = {"node": self}
+                var costs_database := AbilityDatabaseData.new()
+                costs_database.abilities.append(bad_costs)
+                _assert_error(costs_database.validate(), "costs must be JSON-compatible", "bad costs", errors)
+
+                return {"ok": errors.is_empty(), "errors": errors}
+
+
+            func _assert_ok(result: Dictionary, label: String, errors: Array[String]) -> void:
+                if not bool(result.get("ok", false)):
+                    errors.append("%s failed: %s" % [label, str(result)])
+
+
+            func _assert_error(result: Dictionary, needle: String, label: String, errors: Array[String]) -> void:
+                if bool(result.get("ok", true)):
+                    errors.append("%s should fail" % label)
+                    return
+                for message in result.get("errors", []):
+                    if String(message).contains(needle):
+                        return
+                errors.append("%s missing %s in %s" % [label, needle, str(result)])
+
+
+            func _assert_bool(value: bool, message: String, errors: Array[String]) -> void:
+                if not value:
+                    errors.append(message)
+
+
+            func _assert_string(expected: String, actual: String, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %s, got %s" % [label, expected, actual])
+
+
+            func _assert_int(expected: int, actual: int, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %d, got %d" % [label, expected, actual])
+            """
+        ),
+        encoding="utf-8",
+    )
+    (project / "scenes" / "abilities_database_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://scripts/abilities_database_probe.gd" id="1_probe_script"]
+
+            [node name="AbilitiesDatabaseProbe" type="Node"]
             script = ExtResource("1_probe_script")
             """
         ),
