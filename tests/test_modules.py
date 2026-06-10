@@ -2102,6 +2102,20 @@ def _write_abilities_database_probe(project: Path) -> None:
                 cooldown_database.abilities.append(bad_cooldown)
                 _assert_error(cooldown_database.validate(), "cooldown must be zero or greater", "bad cooldown", errors)
 
+                var infinite_cooldown := AbilityDefinitionData.new()
+                infinite_cooldown.ability_id = &"infinite_cooldown"
+                infinite_cooldown.cooldown = INF
+                var infinite_cooldown_database := AbilityDatabaseData.new()
+                infinite_cooldown_database.abilities.append(infinite_cooldown)
+                _assert_error(infinite_cooldown_database.validate(), "cooldown must be finite", "infinite cooldown", errors)
+
+                var nan_cooldown := AbilityDefinitionData.new()
+                nan_cooldown.ability_id = &"nan_cooldown"
+                nan_cooldown.cooldown = NAN
+                var nan_cooldown_database := AbilityDatabaseData.new()
+                nan_cooldown_database.abilities.append(nan_cooldown)
+                _assert_error(nan_cooldown_database.validate(), "cooldown must be finite", "nan cooldown", errors)
+
                 var bad_charges := AbilityDefinitionData.new()
                 bad_charges.ability_id = &"bad_charges"
                 bad_charges.max_charges = 1
@@ -2109,6 +2123,13 @@ def _write_abilities_database_probe(project: Path) -> None:
                 var charges_database := AbilityDatabaseData.new()
                 charges_database.abilities.append(bad_charges)
                 _assert_error(charges_database.validate(), "initial_charges must be <= max_charges", "bad charges", errors)
+
+                var infinite_recovery := AbilityDefinitionData.new()
+                infinite_recovery.ability_id = &"infinite_recovery"
+                infinite_recovery.charge_recovery_time = INF
+                var infinite_recovery_database := AbilityDatabaseData.new()
+                infinite_recovery_database.abilities.append(infinite_recovery)
+                _assert_error(infinite_recovery_database.validate(), "charge_recovery_time must be finite", "infinite recovery", errors)
 
                 var bad_data := AbilityDefinitionData.new()
                 bad_data.ability_id = &"bad_data"
@@ -2123,6 +2144,20 @@ def _write_abilities_database_probe(project: Path) -> None:
                 var costs_database := AbilityDatabaseData.new()
                 costs_database.abilities.append(bad_costs)
                 _assert_error(costs_database.validate(), "costs must be JSON-compatible", "bad costs", errors)
+
+                var non_numeric_costs := AbilityDefinitionData.new()
+                non_numeric_costs.ability_id = &"non_numeric_costs"
+                non_numeric_costs.costs = {"mana": "free"}
+                var non_numeric_costs_database := AbilityDatabaseData.new()
+                non_numeric_costs_database.abilities.append(non_numeric_costs)
+                _assert_error(non_numeric_costs_database.validate(), "scalar costs must be finite numbers", "non-numeric costs", errors)
+
+                var boolean_costs := AbilityDefinitionData.new()
+                boolean_costs.ability_id = &"boolean_costs"
+                boolean_costs.costs = {"ammo": true}
+                var boolean_costs_database := AbilityDatabaseData.new()
+                boolean_costs_database.abilities.append(boolean_costs)
+                _assert_error(boolean_costs_database.validate(), "scalar costs must be finite numbers", "boolean costs", errors)
 
                 return {"ok": errors.is_empty(), "errors": errors}
 

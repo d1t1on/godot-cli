@@ -87,6 +87,8 @@ func _validate_definition(definition: Resource, ability_id: String, result: Dict
 
 	if not _is_json_compatible(definition.costs):
 		AbilityResultData.add_error(result, "costs must be JSON-compatible for ability_id: %s" % ability_id)
+	elif not _has_numeric_scalar_costs(definition.costs):
+		AbilityResultData.add_error(result, "scalar costs must be finite numbers for ability_id: %s" % ability_id)
 	if not _is_json_compatible(definition.default_data):
 		AbilityResultData.add_error(result, "default_data must be JSON-compatible for ability_id: %s" % ability_id)
 
@@ -121,6 +123,16 @@ func _is_json_compatible(value: Variant) -> bool:
 				return false
 		return true
 	return false
+
+
+func _has_numeric_scalar_costs(costs: Dictionary) -> bool:
+	for key in costs.keys():
+		var value: Variant = costs[key]
+		if value is Dictionary or value is Array:
+			continue
+		if not _is_finite_number(value):
+			return false
+	return true
 
 
 func _is_finite_number(value: Variant) -> bool:
