@@ -67,6 +67,14 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertEqual(effects["godot_version"], ">=4.6")
         self.assertEqual(effects["autoloads"], [])
 
+    def test_repository_stats_module_is_discoverable(self) -> None:
+        modules = list_modules()
+        stats = next(module for module in modules if module["name"] == "stats")
+        self.assertEqual(stats["version"], "0.1.0")
+        self.assertEqual(stats["godot_version"], ">=4.6")
+        self.assertEqual(stats["autoloads"], [])
+        self.assertIn("demo", stats)
+
     def test_add_inventory_module_copies_files_without_autoload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -167,6 +175,34 @@ class ModuleInstallerUnitTests(unittest.TestCase):
             copied_targets = {entry["target"] for entry in report["copied"]}
             self.assertIn("res://addons/interaction/interactable.gd", copied_targets)
 
+    def test_add_stats_module_copies_files_without_autoload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = _write_project(root / "project")
+
+            report = add_module(project, "stats")
+
+            self.assertTrue(report["ok"], report)
+            self.assertFalse(report["demo"])
+            self.assertEqual(report["module"], "stats")
+            self.assertEqual(report["autoloads"], [])
+            expected_scripts = {
+                "stat_constants.gd",
+                "stat_result.gd",
+                "stat_definition.gd",
+                "stat_database.gd",
+                "stat_container.gd",
+            }
+            for script_name in expected_scripts:
+                self.assertTrue((project / "addons" / "stats" / script_name).exists(), script_name)
+            project_text = (project / "project.godot").read_text(encoding="utf-8")
+            self.assertNotIn("StatsService", project_text)
+            copied_targets = {entry["target"] for entry in report["copied"]}
+            self.assertTrue(
+                {f"res://addons/stats/{script_name}" for script_name in expected_scripts}.issubset(copied_targets),
+                copied_targets,
+            )
+
     def test_add_interaction_module_with_demo_copies_demo_assets(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -195,6 +231,20 @@ class ModuleInstallerUnitTests(unittest.TestCase):
             self.assertTrue((project / "scripts" / "effects_demo" / "effects_demo.gd").exists())
             self.assertTrue((project / "resources" / "effects_demo" / "effect_database.tres").exists())
             self.assertTrue((project / "tests" / "effects_demo" / "test_effects_demo.py").exists())
+
+    def test_add_stats_module_with_demo_copies_demo_assets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = _write_project(root / "project")
+
+            report = add_module(project, "stats", demo=True)
+
+            self.assertTrue(report["ok"], report)
+            self.assertTrue(report["demo"])
+            self.assertTrue((project / "scenes" / "stats_demo" / "stats_demo.tscn").exists())
+            self.assertTrue((project / "scripts" / "stats_demo" / "stats_demo.gd").exists())
+            self.assertTrue((project / "resources" / "stats_demo" / "stat_database.tres").exists())
+            self.assertTrue((project / "tests" / "stats_demo" / "test_stats_demo.py").exists())
 
     def test_packaged_save_load_module_mirror_exists(self) -> None:
         bundled_root = default_module_roots()[1]
@@ -232,6 +282,13 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertEqual(manifest["autoloads"], [])
         self.assertTrue((bundled_root / "effects" / "addons" / "effects" / "effect_container.gd").exists())
 
+    def test_packaged_stats_module_mirror_exists(self) -> None:
+        bundled_root = default_module_roots()[1]
+        manifest = load_module_manifest("stats", module_root=bundled_root)
+        self.assertEqual(manifest["name"], "stats")
+        self.assertEqual(manifest["autoloads"], [])
+        self.assertTrue((bundled_root / "stats" / "addons" / "stats" / "stat_container.gd").exists())
+
     def test_pyproject_includes_bundled_gameplay_module_data(self) -> None:
         pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn('"bundled_addons/godot_playwright/*"', pyproject)
@@ -262,6 +319,12 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn('"bundled_gameplay_modules/effects/demo/scripts/*"', pyproject)
         self.assertIn('"bundled_gameplay_modules/effects/demo/resources/*"', pyproject)
         self.assertIn('"bundled_gameplay_modules/effects/tests/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/stats/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/stats/addons/stats/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/stats/demo/scenes/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/stats/demo/scripts/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/stats/demo/resources/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/stats/tests/*"', pyproject)
 
     def test_source_and_packaged_save_load_trees_are_identical(self) -> None:
         source_root, bundled_root = default_module_roots()
@@ -342,6 +405,21 @@ class ModuleInstallerUnitTests(unittest.TestCase):
                 relative_path.as_posix(),
             )
 
+    def test_source_and_packaged_stats_trees_are_identical(self) -> None:
+        source_root, bundled_root = default_module_roots()
+        source = source_root / "stats"
+        bundled = bundled_root / "stats"
+        source_files = sorted(path.relative_to(source) for path in source.rglob("*") if path.is_file())
+        bundled_files = sorted(path.relative_to(bundled) for path in bundled.rglob("*") if path.is_file())
+
+        self.assertEqual([path.as_posix() for path in source_files], [path.as_posix() for path in bundled_files])
+        for relative_path in source_files:
+            self.assertEqual(
+                (source / relative_path).read_bytes(),
+                (bundled / relative_path).read_bytes(),
+                relative_path.as_posix(),
+            )
+
     def test_save_load_docs_exist_for_humans_and_agents(self) -> None:
         source_root = default_module_roots()[0] / "save_load"
         bundled_root = default_module_roots()[1] / "save_load"
@@ -395,18 +473,42 @@ class ModuleInstallerUnitTests(unittest.TestCase):
             self.assertIn("interaction_id", agent)
             self.assertIn("SaveService", agent)
 
-    def test_readme_gameplay_module_commands_include_inventory_and_interaction_demos(self) -> None:
+    def test_stats_docs_exist_for_humans_and_agents(self) -> None:
+        source_root = default_module_roots()[0] / "stats"
+        bundled_root = default_module_roots()[1] / "stats"
+        for root in (source_root, bundled_root):
+            readme = (root / "README.md").read_text(encoding="utf-8")
+            agent = (root / "AGENT.md").read_text(encoding="utf-8")
+            self.assertIn("godot-playwright module add /path/to/project stats", readme)
+            self.assertIn("godot-playwright module add /path/to/project stats --demo", readme)
+            self.assertIn("StatContainer.set_value", readme)
+            self.assertIn("StatContainer.apply_state(data: Dictionary)", readme)
+            self.assertIn("StatDefinition", readme)
+            self.assertIn("pool", readme)
+            self.assertIn("stat_changed", readme)
+            self.assertIn("save_load", readme)
+            self.assertIn("save_participants", readme)
+            self.assertIn("before the node enters the tree", readme)
+            self.assertIn("godot-playwright check-scripts", readme)
+            self.assertIn("stat_id", agent)
+            self.assertIn("Resource", agent)
+            self.assertIn("SaveService", agent)
+            self.assertIn("combat", agent)
+            self.assertIn("Do not use this module as a combat system", agent)
+            self.assertIn("save_participants", agent)
+            self.assertIn("before the node enters the tree", agent)
+            self.assertIn("godot-playwright validate", agent)
+
+    def test_readme_gameplay_module_commands_include_current_modules(self) -> None:
         readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
 
-        self.assertIn(
-            "godot-playwright module add /tmp/agent-game inventory --demo",
-            readme,
-            "top-level README should keep the inventory demo command",
-        )
+        self.assertIn("godot-playwright module add /tmp/agent-game inventory --demo", readme)
         self.assertIn("godot-playwright module add /tmp/agent-game interaction", readme)
         self.assertIn("godot-playwright module add /tmp/agent-game interaction --demo", readme)
         self.assertIn("godot-playwright module add /tmp/agent-game effects", readme)
         self.assertIn("godot-playwright module add /tmp/agent-game effects --demo", readme)
+        self.assertIn("godot-playwright module add /tmp/agent-game stats", readme)
+        self.assertIn("godot-playwright module add /tmp/agent-game stats --demo", readme)
 
     def test_effects_docs_exist_for_humans_and_agents(self) -> None:
         source_root = default_module_roots()[0] / "effects"
@@ -465,6 +567,96 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn("class_name EffectResult", result)
         self.assertIn("static func add_event", result)
         self.assertIn('const STACK_REFRESH: String = "refresh"', constants)
+
+    def test_stats_source_defines_resource_helpers(self) -> None:
+        source_root = default_module_roots()[0]
+        stats_root = source_root / "stats" / "addons" / "stats"
+        definition = (stats_root / "stat_definition.gd").read_text(encoding="utf-8")
+        database = (stats_root / "stat_database.gd").read_text(encoding="utf-8")
+        result = (stats_root / "stat_result.gd").read_text(encoding="utf-8")
+
+        self.assertIn("class_name StatDefinition", definition)
+        self.assertIn("@export var stat_id: StringName", definition)
+        self.assertIn("@export var display_name: String", definition)
+        self.assertIn("@export_multiline var description: String", definition)
+        self.assertIn("@export var tags: Array[StringName] = []", definition)
+        self.assertIn("@export var default_base_value: float = 0.0", definition)
+        self.assertIn("@export var default_current_value: float = 0.0", definition)
+        self.assertIn("@export var clamp_min: bool = true", definition)
+        self.assertIn("@export var min_value: float = 0.0", definition)
+        self.assertIn("@export var clamp_max: bool = false", definition)
+        self.assertIn("@export var max_value: float = 100.0", definition)
+        self.assertIn("@export var is_pool: bool = false", definition)
+        self.assertIn("class_name StatDatabase", database)
+        self.assertIn('StatDefinitionData := preload("res://addons/stats/stat_definition.gd")', database)
+        self.assertIn('StatResultData := preload("res://addons/stats/stat_result.gd")', database)
+        self.assertIn("@export var stats: Array[Resource] = []", database)
+        self.assertIn("func get_stat(stat_id: String) -> Resource", database)
+        self.assertIn("func has_stat(stat_id: String) -> bool", database)
+        self.assertIn("func get_stat_ids() -> Array[String]", database)
+        self.assertIn("func validate() -> Dictionary", database)
+        self.assertIn("stats[%d] is null", database)
+        self.assertIn("must be a StatDefinition", database)
+        self.assertIn("stat_id must be non-empty", database)
+        self.assertIn("must not contain leading or trailing whitespace", database)
+        self.assertIn("Duplicate stat_id", database)
+        self.assertIn("ids.append(raw_stat_id)", database)
+        self.assertIn("_is_finite_number", database)
+        self.assertIn("default_base_value must be finite", database)
+        self.assertIn("default_current_value must be finite", database)
+        self.assertIn("min_value must be finite", database)
+        self.assertIn("max_value must be finite", database)
+        self.assertIn("min_value must be <= max_value", database)
+        self.assertIn("class_name StatResult", result)
+        self.assertIn('"ok": ok', result)
+        self.assertIn('"stat_id": stat_id', result)
+        self.assertIn('"previous_value": 0.0', result)
+        self.assertIn('"current_value": 0.0', result)
+        self.assertIn('"previous_base_value": 0.0', result)
+        self.assertIn('"base_value": 0.0', result)
+        self.assertIn('"requested_value": 0.0', result)
+        self.assertIn('"delta": 0.0', result)
+        self.assertIn('"clamped": false', result)
+        self.assertIn("static func add_event", result)
+        self.assertIn("static func add_warning", result)
+        self.assertIn("static func add_error", result)
+        self.assertIn('"events": []', result)
+        self.assertIn('"warnings": []', result)
+        self.assertIn('"errors": []', result)
+
+    def test_stats_source_defines_container_api(self) -> None:
+        source_root = default_module_roots()[0]
+        container = (source_root / "stats" / "addons" / "stats" / "stat_container.gd").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("class_name StatContainer", container)
+        self.assertIn("@export var database: Resource", container)
+        self.assertIn("@export var save_id: StringName", container)
+        self.assertIn("@export var initialize_on_ready: bool = true", container)
+        self.assertIn("signal stat_changed", container)
+        self.assertIn("signal base_stat_changed", container)
+        self.assertIn("signal stat_depleted", container)
+        self.assertIn("signal stat_filled", container)
+        self.assertIn("signal stats_changed", container)
+        self.assertIn("func initialize_stats(reset: bool = false) -> Dictionary", container)
+        self.assertIn("func has_stat(stat_id: String) -> bool", container)
+        self.assertIn("func get_value(stat_id: String) -> float", container)
+        self.assertIn("func get_base_value(stat_id: String) -> float", container)
+        self.assertIn("func get_stat(stat_id: String) -> Dictionary", container)
+        self.assertIn("func get_stats() -> Array", container)
+        self.assertIn("func set_value(stat_id: String, value: float) -> Dictionary", container)
+        self.assertIn("func modify_value(stat_id: String, delta: float) -> Dictionary", container)
+        self.assertIn("func set_base_value(stat_id: String, value: float) -> Dictionary", container)
+        self.assertIn("func modify_base_value(stat_id: String, delta: float) -> Dictionary", container)
+        self.assertIn("func get_state() -> Dictionary", container)
+        self.assertIn("func apply_state(data: Dictionary) -> Dictionary", container)
+        self.assertIn("func get_save_id() -> String", container)
+        self.assertIn("func save_state() -> Dictionary", container)
+        self.assertIn("func load_state(data: Dictionary) -> void", container)
+        self.assertIn("StatConstantsData.SCHEMA_VERSION", container)
+        self.assertIn("is_pool", container)
+        self.assertIn("clamped", container)
 
     def test_inventory_source_defines_core_stack_api(self) -> None:
         source_root = default_module_roots()[0]
@@ -809,6 +1001,158 @@ def _write_module_fixture(module_root: Path) -> Path:
         encoding="utf-8",
     )
     return module_dir
+
+
+@unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
+class StatsModuleGodotTests(unittest.TestCase):
+    def test_installed_stats_scripts_parse(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Stats Parse Probe")
+            add_module(project, "stats")
+
+            report = check_project_scripts(
+                project,
+                ["res://addons/stats"],
+                artifacts_dir=root / "artifacts",
+            )
+
+        self.assertTrue(report["ok"], report["diagnostics"])
+
+    def test_stats_database_validation_runs_in_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Stats Database Probe")
+            add_module(project, "stats")
+            _write_stats_database_probe(project)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/stats_database_probe.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#StatsDatabaseProbe").call("run_probe")
+
+        self.assertTrue(result["ok"], result)
+
+    def test_stats_container_operations_run_in_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Stats Container Probe")
+            add_module(project, "stats")
+            _write_stats_container_probe(project)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/stats_container_probe.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#StatsContainerProbe").call("run_probe")
+
+        self.assertTrue(result["ok"], result)
+
+    def test_stats_container_review_regressions_are_validated(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Stats Container Review Probe")
+            add_module(project, "stats")
+            _write_stats_container_review_probe(project)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/stats_container_review_probe.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#StatsContainerReviewProbe").call("run_probe")
+
+        self.assertTrue(result["ok"], result)
+
+    def test_installed_stats_demo_resources_are_valid(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Stats Resource Probe")
+            add_module(project, "stats", demo=True)
+
+            report = check_project_resources(
+                project,
+                ["res://scenes/stats_demo", "res://resources/stats_demo"],
+            )
+
+        self.assertTrue(report["ok"], report["diagnostics"])
+
+    def test_stats_demo_runs_in_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Stats Runtime Probe")
+            add_module(project, "stats", demo=True)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/stats_demo/stats_demo.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#StatsDemo").call("run_stats_demo")
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["health_after_restore"], 40.0)
+        self.assertEqual(result["move_speed_after_restore"], 12.0)
+        self.assertFalse(result["missing_stat_ok"])
+        self.assertFalse(result["save_load_checked"])
+
+    def test_installed_stats_demo_test_runs_without_main_scene_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Stats Demo Test Probe")
+            add_module(project, "stats", demo=True)
+
+            report = run_tests(
+                project,
+                [project / "tests" / "stats_demo"],
+                artifacts_dir=root / "artifacts",
+                trace="off",
+                timeout=30,
+            )
+
+        self.assertEqual(report["failed"], 0, report["tests"])
+        self.assertEqual(report["passed"], 1)
+
+    def test_stats_demo_integrates_with_save_load_when_installed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Stats Save Load Probe")
+            add_module(project, "save_load")
+            add_module(project, "stats", demo=True)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/stats_demo/stats_demo.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#StatsDemo").call("run_stats_demo")
+
+        self.assertTrue(result["ok"], result)
+        self.assertTrue(result["save_load_checked"], result)
+        self.assertEqual(result["save_load_health"], 33.0)
 
 
 @unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
@@ -1603,6 +1947,395 @@ def _write_interactable_probe(project: Path) -> None:
             [ext_resource type="Script" path="res://scripts/interactable_probe.gd" id="1_probe_script"]
 
             [node name="InteractableProbe" type="Node"]
+            script = ExtResource("1_probe_script")
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_stats_database_probe(project: Path) -> None:
+    (project / "scripts" / "stats_database_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            const StatDefinitionData := preload("res://addons/stats/stat_definition.gd")
+            const StatDatabaseData := preload("res://addons/stats/stat_database.gd")
+
+
+            func run_probe() -> Dictionary:
+                var errors: Array[String] = []
+                var health := StatDefinitionData.new()
+                health.stat_id = &"health"
+                health.display_name = "Health"
+                health.default_base_value = 100.0
+                health.default_current_value = 100.0
+                health.clamp_min = true
+                health.min_value = 0.0
+                health.is_pool = true
+
+                var stamina := StatDefinitionData.new()
+                stamina.stat_id = &"stamina"
+                stamina.display_name = "Stamina"
+                stamina.default_base_value = 50.0
+                stamina.default_current_value = 25.0
+                stamina.clamp_min = true
+                stamina.min_value = 0.0
+                stamina.is_pool = true
+
+                var database := StatDatabaseData.new()
+                database.stats = [health, stamina]
+                var valid_result: Dictionary = database.validate()
+                _assert_bool(bool(valid_result.get("ok", false)), "database should validate", errors)
+                _assert_bool(database.has_stat("health"), "database has health", errors)
+                _assert_bool(database.get_stat("missing") == null, "missing stat returns null", errors)
+                _assert_array(["health", "stamina"], database.get_stat_ids(), "stat id order", errors)
+
+                var duplicate := StatDefinitionData.new()
+                duplicate.stat_id = &"health"
+                var duplicate_database := StatDatabaseData.new()
+                duplicate_database.stats = [health, duplicate]
+                var duplicate_result: Dictionary = duplicate_database.validate()
+                _assert_bool(not bool(duplicate_result.get("ok", true)), "duplicate database should fail", errors)
+                _assert_contains(duplicate_result.get("errors", []), "Duplicate stat_id: health", "duplicate error", errors)
+
+                var bad_bounds := StatDefinitionData.new()
+                bad_bounds.stat_id = &"bad_bounds"
+                bad_bounds.clamp_min = true
+                bad_bounds.min_value = 10.0
+                bad_bounds.clamp_max = true
+                bad_bounds.max_value = 1.0
+                var bad_database := StatDatabaseData.new()
+                bad_database.stats = [bad_bounds]
+                var bad_result: Dictionary = bad_database.validate()
+                _assert_bool(not bool(bad_result.get("ok", true)), "bad bounds should fail", errors)
+                _assert_contains(bad_result.get("errors", []), "min_value must be <= max_value", "bad bounds error", errors)
+
+                return {"ok": errors.is_empty(), "errors": errors}
+
+
+            func _assert_bool(value: bool, message: String, errors: Array[String]) -> void:
+                if not value:
+                    errors.append(message)
+
+
+            func _assert_array(expected: Array, actual: Array, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %s, got %s" % [label, str(expected), str(actual)])
+
+
+            func _assert_contains(messages: Array, needle: String, label: String, errors: Array[String]) -> void:
+                for message in messages:
+                    if String(message).contains(needle):
+                        return
+                errors.append("%s: missing %s in %s" % [label, needle, str(messages)])
+            """
+        ),
+        encoding="utf-8",
+    )
+    (project / "scenes" / "stats_database_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://scripts/stats_database_probe.gd" id="1_probe_script"]
+
+            [node name="StatsDatabaseProbe" type="Node"]
+            script = ExtResource("1_probe_script")
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_stats_container_probe(project: Path) -> None:
+    (project / "scripts" / "stats_container_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            const StatDefinitionData := preload("res://addons/stats/stat_definition.gd")
+            const StatDatabaseData := preload("res://addons/stats/stat_database.gd")
+            const StatContainerData := preload("res://addons/stats/stat_container.gd")
+
+            var events: Array[String] = []
+
+
+            func run_probe() -> Dictionary:
+                var errors: Array[String] = []
+                var container := StatContainerData.new()
+                container.name = "Stats"
+                container.initialize_on_ready = false
+                add_child(container)
+                container.database = _make_database()
+                container.stat_depleted.connect(func(stat_id: String, _value: float, _result: Dictionary): events.append("depleted:%s" % stat_id))
+                container.stat_filled.connect(func(stat_id: String, _value: float, _result: Dictionary): events.append("filled:%s" % stat_id))
+
+                var init_result: Dictionary = container.initialize_stats()
+                _assert_ok(init_result, "initialize", errors)
+                _assert_float(100.0, container.get_base_value("health"), "health base", errors)
+                _assert_float(100.0, container.get_value("health"), "health current", errors)
+                _assert_float(4.0, container.get_value("move_speed"), "move speed current", errors)
+
+                var damage_result: Dictionary = container.modify_value("health", -25.0)
+                _assert_ok(damage_result, "damage", errors)
+                _assert_float(75.0, container.get_value("health"), "health after damage", errors)
+
+                var deplete_result: Dictionary = container.modify_value("health", -999.0)
+                _assert_ok(deplete_result, "deplete", errors)
+                _assert_bool(bool(deplete_result.get("clamped", false)), "deplete should clamp", errors)
+                _assert_float(0.0, container.get_value("health"), "health after depletion", errors)
+                _assert_contains(events, "depleted:health", "depletion event", errors)
+
+                var fill_result: Dictionary = container.set_value("health", 100.0)
+                _assert_ok(fill_result, "fill", errors)
+                _assert_contains(events, "filled:health", "fill event", errors)
+
+                var lower_base_result: Dictionary = container.set_base_value("health", 40.0)
+                _assert_ok(lower_base_result, "lower base", errors)
+                _assert_float(40.0, container.get_base_value("health"), "lowered base", errors)
+                _assert_float(40.0, container.get_value("health"), "pool current clamps to base", errors)
+
+                var speed_result: Dictionary = container.set_base_value("move_speed", 8.0)
+                _assert_ok(speed_result, "speed base", errors)
+                var speed_current_result: Dictionary = container.set_value("move_speed", 12.0)
+                _assert_ok(speed_current_result, "speed current", errors)
+                _assert_float(12.0, container.get_value("move_speed"), "non-pool current ignores base maximum", errors)
+
+                var saved_state: Dictionary = container.get_state()
+                container.set_value("health", 5.0)
+                container.set_value("move_speed", 1.0)
+                var restore_result: Dictionary = container.apply_state(saved_state)
+                _assert_ok(restore_result, "state restore", errors)
+                _assert_float(40.0, container.get_value("health"), "restored health", errors)
+                _assert_float(12.0, container.get_value("move_speed"), "restored move speed", errors)
+
+                var bad_result: Dictionary = container.set_value("missing", 1.0)
+                _assert_bool(not bool(bad_result.get("ok", true)), "missing stat should fail", errors)
+                _assert_contains(bad_result.get("errors", []), "Unknown stat_id: missing", "missing stat error", errors)
+
+                var before_bad_state: Dictionary = container.get_state()
+                var bad_state := {"schema_version": 1, "stats": [{"stat_id": "health", "base_value": 100.0, "current_value": 500.0}]}
+                var bad_state_result: Dictionary = container.apply_state(bad_state)
+                _assert_bool(not bool(bad_state_result.get("ok", true)), "bad state should fail", errors)
+                _assert_dictionary(before_bad_state, container.get_state(), "bad state should not mutate", errors)
+
+                return {"ok": errors.is_empty(), "errors": errors, "events": events}
+
+
+            func _make_database() -> Resource:
+                var health := StatDefinitionData.new()
+                health.stat_id = &"health"
+                health.display_name = "Health"
+                health.default_base_value = 100.0
+                health.default_current_value = 100.0
+                health.clamp_min = true
+                health.min_value = 0.0
+                health.is_pool = true
+
+                var move_speed := StatDefinitionData.new()
+                move_speed.stat_id = &"move_speed"
+                move_speed.display_name = "Move Speed"
+                move_speed.default_base_value = 4.0
+                move_speed.default_current_value = 4.0
+                move_speed.clamp_min = true
+                move_speed.min_value = 0.0
+
+                var database := StatDatabaseData.new()
+                database.stats = [health, move_speed]
+                return database
+
+
+            func _assert_ok(result: Dictionary, label: String, errors: Array[String]) -> void:
+                if not bool(result.get("ok", false)):
+                    errors.append("%s failed: %s" % [label, str(result)])
+
+
+            func _assert_bool(value: bool, message: String, errors: Array[String]) -> void:
+                if not value:
+                    errors.append(message)
+
+
+            func _assert_float(expected: float, actual: float, label: String, errors: Array[String]) -> void:
+                if not is_equal_approx(expected, actual):
+                    errors.append("%s: expected %s, got %s" % [label, str(expected), str(actual)])
+
+
+            func _assert_dictionary(expected: Dictionary, actual: Dictionary, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %s, got %s" % [label, str(expected), str(actual)])
+
+
+            func _assert_contains(messages: Array, needle: String, label: String, errors: Array[String]) -> void:
+                for message in messages:
+                    if String(message).contains(needle):
+                        return
+                errors.append("%s: missing %s in %s" % [label, needle, str(messages)])
+            """
+        ),
+        encoding="utf-8",
+    )
+    (project / "scenes" / "stats_container_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://scripts/stats_container_probe.gd" id="1_probe_script"]
+
+            [node name="StatsContainerProbe" type="Node"]
+            script = ExtResource("1_probe_script")
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_stats_container_review_probe(project: Path) -> None:
+    (project / "scripts" / "stats_container_review_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            const StatContainerData := preload("res://addons/stats/stat_container.gd")
+            const StatDefinitionData := preload("res://addons/stats/stat_definition.gd")
+            const StatDatabaseData := preload("res://addons/stats/stat_database.gd")
+
+
+            func run_probe() -> Dictionary:
+                var errors: Array[String] = []
+                _validate_missing_stat_fill_uses_clamped_base(errors)
+                _validate_stale_runtime_stat_returns_error(errors)
+                _validate_malformed_schema_rejected_without_mutation(errors)
+                return {"ok": errors.is_empty(), "errors": errors}
+
+
+            func _validate_missing_stat_fill_uses_clamped_base(errors: Array[String]) -> void:
+                var stamina = StatDefinitionData.new()
+                stamina.stat_id = &"stamina"
+                stamina.default_base_value = 150.0
+                stamina.default_current_value = 150.0
+                stamina.clamp_min = true
+                stamina.min_value = 0.0
+                stamina.clamp_max = true
+                stamina.max_value = 100.0
+                stamina.is_pool = true
+
+                var health = StatDefinitionData.new()
+                health.stat_id = &"health"
+                health.default_base_value = 10.0
+                health.default_current_value = 10.0
+
+                var database = StatDatabaseData.new()
+                database.stats.append(health)
+                database.stats.append(stamina)
+
+                var container = StatContainerData.new()
+                container.initialize_on_ready = false
+                container.database = database
+                add_child(container)
+
+                var result: Dictionary = container.apply_state({
+                    "schema_version": 1,
+                    "stats": [{"stat_id": "health", "base_value": 10.0, "current_value": 7.0}],
+                })
+                _assert_bool(bool(result.get("ok", false)), "apply_state should succeed", errors)
+                var restored_stamina := container.get_stat("stamina")
+                _assert_float(100.0, float(restored_stamina.get("base_value", -1.0)), "stamina filled base value", errors)
+                _assert_float(100.0, float(restored_stamina.get("current_value", -1.0)), "stamina filled current value", errors)
+                container.queue_free()
+
+
+            func _validate_stale_runtime_stat_returns_error(errors: Array[String]) -> void:
+                var health = StatDefinitionData.new()
+                health.stat_id = &"health"
+                health.default_base_value = 10.0
+                health.default_current_value = 10.0
+
+                var initial_database = StatDatabaseData.new()
+                initial_database.stats.append(health)
+
+                var container = StatContainerData.new()
+                container.initialize_on_ready = false
+                container.database = initial_database
+                add_child(container)
+
+                var initialize_result: Dictionary = container.initialize_stats()
+                _assert_bool(bool(initialize_result.get("ok", false)), "initialize_stats should succeed", errors)
+                _assert_bool(container.has_stat("health"), "container should have initialized health", errors)
+
+                container.database = StatDatabaseData.new()
+                var stale_result: Dictionary = container.set_value("health", 5.0)
+                _assert_bool(not bool(stale_result.get("ok", true)), "stale stat mutation should fail", errors)
+                _assert_contains(stale_result.get("errors", []), "Unknown stat_id", "stale stat mutation error", errors)
+                container.queue_free()
+
+
+            func _validate_malformed_schema_rejected_without_mutation(errors: Array[String]) -> void:
+                var health = StatDefinitionData.new()
+                health.stat_id = &"health"
+                health.default_base_value = 10.0
+                health.default_current_value = 10.0
+
+                var database = StatDatabaseData.new()
+                database.stats.append(health)
+
+                var container = StatContainerData.new()
+                container.initialize_on_ready = false
+                container.database = database
+                add_child(container)
+
+                var initialize_result: Dictionary = container.initialize_stats()
+                _assert_bool(bool(initialize_result.get("ok", false)), "initialize_stats should succeed for malformed schema probe", errors)
+
+                var before_state: Dictionary = container.get_state()
+                var malformed_states: Array = [
+                    {"label": "fractional schema", "state": {"schema_version": 1.5, "stats": [{"stat_id": "health", "base_value": 9.0, "current_value": 9.0}]}},
+                    {"label": "string schema", "state": {"schema_version": "1", "stats": [{"stat_id": "health", "base_value": 8.0, "current_value": 8.0}]}},
+                ]
+                for entry in malformed_states:
+                    var label := String(entry["label"])
+                    var apply_result: Dictionary = container.apply_state(entry["state"])
+                    _assert_bool(not bool(apply_result.get("ok", true)), "%s should fail" % label, errors)
+                    _assert_contains(apply_result.get("errors", []), "schema_version", "%s schema error" % label, errors)
+                    _assert_contains(apply_result.get("errors", []), "integer", "%s integer error" % label, errors)
+                    _assert_dictionary(before_state, container.get_state(), "%s should not mutate" % label, errors)
+
+                container.queue_free()
+
+
+            func _assert_bool(value: bool, message: String, errors: Array[String]) -> void:
+                if not value:
+                    errors.append(message)
+
+
+            func _assert_float(expected: float, actual: float, label: String, errors: Array[String]) -> void:
+                if not is_equal_approx(expected, actual):
+                    errors.append("%s: expected %s, got %s" % [label, str(expected), str(actual)])
+
+
+            func _assert_dictionary(expected: Dictionary, actual: Dictionary, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %s, got %s" % [label, str(expected), str(actual)])
+
+
+            func _assert_contains(messages: Array, needle: String, label: String, errors: Array[String]) -> void:
+                for message in messages:
+                    if String(message).contains(needle):
+                        return
+                errors.append("%s: missing %s in %s" % [label, needle, str(messages)])
+            """
+        ),
+        encoding="utf-8",
+    )
+    (project / "scenes" / "stats_container_review_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://scripts/stats_container_review_probe.gd" id="1_probe_script"]
+
+            [node name="StatsContainerReviewProbe" type="Node"]
             script = ExtResource("1_probe_script")
             """
         ),

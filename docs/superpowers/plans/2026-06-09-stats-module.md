@@ -74,6 +74,7 @@ In `tests/test_modules.py`, add these methods inside `ModuleInstallerUnitTests` 
         self.assertEqual(stats["version"], "0.1.0")
         self.assertEqual(stats["godot_version"], ">=4.6")
         self.assertEqual(stats["autoloads"], [])
+        self.assertNotIn("demo", stats)
 
     def test_add_stats_module_copies_files_without_autoload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -86,13 +87,22 @@ In `tests/test_modules.py`, add these methods inside `ModuleInstallerUnitTests` 
             self.assertFalse(report["demo"])
             self.assertEqual(report["module"], "stats")
             self.assertEqual(report["autoloads"], [])
-            self.assertTrue((project / "addons" / "stats" / "stat_container.gd").exists())
-            self.assertTrue((project / "addons" / "stats" / "stat_definition.gd").exists())
-            self.assertTrue((project / "addons" / "stats" / "stat_database.gd").exists())
+            expected_scripts = {
+                "stat_constants.gd",
+                "stat_result.gd",
+                "stat_definition.gd",
+                "stat_database.gd",
+                "stat_container.gd",
+            }
+            for script_name in expected_scripts:
+                self.assertTrue((project / "addons" / "stats" / script_name).exists(), script_name)
             project_text = (project / "project.godot").read_text(encoding="utf-8")
             self.assertNotIn("StatsService", project_text)
             copied_targets = {entry["target"] for entry in report["copied"]}
-            self.assertIn("res://addons/stats/stat_container.gd", copied_targets)
+            self.assertTrue(
+                {f"res://addons/stats/{script_name}" for script_name in expected_scripts}.issubset(copied_targets),
+                copied_targets,
+            )
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -126,14 +136,6 @@ Create `gameplay_modules/stats/module.json`:
     {"from": "addons/stats", "to": "addons/stats"}
   ],
   "autoloads": [],
-  "demo": {
-    "copy": [
-      {"from": "demo/scenes", "to": "scenes/stats_demo"},
-      {"from": "demo/scripts", "to": "scripts/stats_demo"},
-      {"from": "demo/resources", "to": "resources/stats_demo"},
-      {"from": "tests", "to": "tests/stats_demo"}
-    ]
-  },
   "validation": {
     "commands": [
       "godot-playwright check-scripts /path/to/project res://addons/stats --exclude addons/godot_playwright/**",
@@ -156,12 +158,6 @@ Install into a Godot project:
 godot-playwright module add /path/to/project stats
 ```
 
-Install the demo scene and copied demo test:
-
-```sh
-godot-playwright module add /path/to/project stats --demo
-```
-
 The installer copies `res://addons/stats/`. It does not register an Autoload.
 ````
 
@@ -176,12 +172,6 @@ Install with:
 
 ```sh
 godot-playwright module add /path/to/project stats
-```
-
-Use `--demo` only when adding a demo scene and copied test is acceptable:
-
-```sh
-godot-playwright module add /path/to/project stats --demo
 ```
 ````
 
@@ -310,18 +300,52 @@ In `tests/test_modules.py`, add this method inside `ModuleInstallerUnitTests` ne
 
         self.assertIn("class_name StatDefinition", definition)
         self.assertIn("@export var stat_id: StringName", definition)
+        self.assertIn("@export var display_name: String", definition)
+        self.assertIn("@export_multiline var description: String", definition)
+        self.assertIn("@export var tags: Array[StringName] = []", definition)
         self.assertIn("@export var default_base_value: float = 0.0", definition)
         self.assertIn("@export var default_current_value: float = 0.0", definition)
+        self.assertIn("@export var clamp_min: bool = true", definition)
+        self.assertIn("@export var min_value: float = 0.0", definition)
+        self.assertIn("@export var clamp_max: bool = false", definition)
+        self.assertIn("@export var max_value: float = 100.0", definition)
         self.assertIn("@export var is_pool: bool = false", definition)
         self.assertIn("class_name StatDatabase", database)
+        self.assertIn('StatDefinitionData := preload("res://addons/stats/stat_definition.gd")', database)
+        self.assertIn('StatResultData := preload("res://addons/stats/stat_result.gd")', database)
+        self.assertIn("@export var stats: Array[Resource] = []", database)
         self.assertIn("func get_stat(stat_id: String) -> Resource", database)
         self.assertIn("func has_stat(stat_id: String) -> bool", database)
         self.assertIn("func get_stat_ids() -> Array[String]", database)
         self.assertIn("func validate() -> Dictionary", database)
+        self.assertIn("stats[%d] is null", database)
+        self.assertIn("must be a StatDefinition", database)
+        self.assertIn("stat_id must be non-empty", database)
+        self.assertIn("must not contain leading or trailing whitespace", database)
         self.assertIn("Duplicate stat_id", database)
+        self.assertIn("ids.append(raw_stat_id)", database)
+        self.assertIn("_is_finite_number", database)
+        self.assertIn("default_base_value must be finite", database)
+        self.assertIn("default_current_value must be finite", database)
+        self.assertIn("min_value must be finite", database)
+        self.assertIn("max_value must be finite", database)
+        self.assertIn("min_value must be <= max_value", database)
         self.assertIn("class_name StatResult", result)
+        self.assertIn('"ok": ok', result)
+        self.assertIn('"stat_id": stat_id', result)
+        self.assertIn('"previous_value": 0.0', result)
+        self.assertIn('"current_value": 0.0', result)
+        self.assertIn('"previous_base_value": 0.0', result)
+        self.assertIn('"base_value": 0.0', result)
+        self.assertIn('"requested_value": 0.0', result)
+        self.assertIn('"delta": 0.0', result)
+        self.assertIn('"clamped": false', result)
+        self.assertIn("static func add_event", result)
+        self.assertIn("static func add_warning", result)
         self.assertIn("static func add_error", result)
         self.assertIn('"events": []', result)
+        self.assertIn('"warnings": []', result)
+        self.assertIn('"errors": []', result)
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -410,9 +434,10 @@ func get_stat_ids() -> Array[String]:
 		var definition = _definition_or_null(stat)
 		if definition == null:
 			continue
-		var stat_id := String(definition.stat_id).strip_edges()
-		if not stat_id.is_empty():
-			ids.append(stat_id)
+		var raw_stat_id := String(definition.stat_id)
+		var stat_id := raw_stat_id.strip_edges()
+		if not stat_id.is_empty() and stat_id == raw_stat_id:
+			ids.append(raw_stat_id)
 	return ids
 
 
@@ -485,7 +510,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```sh
-git add tests/test_modules.py gameplay_modules/stats/addons/stats/stat_result.gd gameplay_modules/stats/addons/stats/stat_database.gd
+git add tests/test_modules.py gameplay_modules/stats/addons/stats/stat_result.gd gameplay_modules/stats/addons/stats/stat_database.gd docs/superpowers/plans/2026-06-09-stats-module.md
 git commit -m "Add stats resource helpers"
 ```
 
@@ -1292,6 +1317,10 @@ git commit -m "Validate stats runtime behavior"
 
 **Files:**
 - Modify: `tests/test_modules.py`
+- Modify: `gameplay_modules/stats/module.json`
+- Modify: `gameplay_modules/stats/README.md`
+- Modify: `gameplay_modules/stats/AGENT.md`
+- Modify: `README.md`
 - Create: `gameplay_modules/stats/demo/resources/health.tres`
 - Create: `gameplay_modules/stats/demo/resources/stamina.tres`
 - Create: `gameplay_modules/stats/demo/resources/move_speed.tres`
@@ -1692,7 +1721,59 @@ def test_stats_demo_runs(godot):
     assert result["missing_stat_ok"] is False
 ```
 
-- [ ] **Step 6: Run tests to verify they pass**
+- [ ] **Step 6: Add demo copy block to the module manifest**
+
+Update `gameplay_modules/stats/module.json` to add the demo copy block after `autoloads`:
+
+```json
+  "demo": {
+    "copy": [
+      {"from": "demo/scenes", "to": "scenes/stats_demo"},
+      {"from": "demo/scripts", "to": "scripts/stats_demo"},
+      {"from": "demo/resources", "to": "resources/stats_demo"},
+      {"from": "tests", "to": "tests/stats_demo"}
+    ]
+  },
+```
+
+- [ ] **Step 7: Add demo install commands to source module docs**
+
+Update `gameplay_modules/stats/README.md` to include the demo install command after the base install command:
+
+````markdown
+Install the demo scene and copied demo test:
+
+```sh
+godot-playwright module add /path/to/project stats --demo
+```
+````
+
+Update `gameplay_modules/stats/AGENT.md` to include the demo install command after the base install command:
+
+````markdown
+Use `--demo` only when adding a demo scene and copied test is acceptable:
+
+```sh
+godot-playwright module add /path/to/project stats --demo
+```
+````
+
+- [ ] **Step 8: Add stats commands and summary to top-level README**
+
+In `README.md`, add these commands to the gameplay module command block:
+
+```sh
+godot-playwright module add /tmp/agent-game stats
+godot-playwright module add /tmp/agent-game stats --demo
+```
+
+Add this short description after the `interaction` module paragraph:
+
+```markdown
+The `stats` module adds a reusable `StatContainer` node backed by `StatDefinition` and `StatDatabase` Resources. It supports base/current values, pool stats such as health or stamina, min/max clamping, change/depletion/fill signals, JSON-compatible `get_state()` / `apply_state(data)`, and optional persistence through `save_load` when a container has a stable `save_id`.
+```
+
+- [ ] **Step 9: Run tests to verify they pass**
 
 Run:
 
@@ -1710,10 +1791,10 @@ python -m unittest tests.test_modules.StatsModuleGodotTests.test_installed_stats
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 10: Commit**
 
 ```sh
-git add tests/test_modules.py gameplay_modules/stats
+git add tests/test_modules.py README.md gameplay_modules/stats
 git commit -m "Add stats gameplay module demo"
 ```
 
@@ -1869,7 +1950,7 @@ In `tests/test_modules.py`, add this method inside `ModuleInstallerUnitTests` ne
             self.assertIn("combat", agent)
 ```
 
-Update `test_readme_gameplay_module_commands_include_inventory_and_interaction_demos` to include stats checks and rename it to `test_readme_gameplay_module_commands_include_current_modules`:
+Update `test_readme_gameplay_module_commands_include_inventory_and_interaction_demos` to include stats checks from Task 5 and rename it to `test_readme_gameplay_module_commands_include_current_modules`:
 
 ```python
     def test_readme_gameplay_module_commands_include_current_modules(self) -> None:
@@ -1894,7 +1975,7 @@ Expected: FAIL because docs are incomplete and top-level README does not mention
 
 - [ ] **Step 3: Expand `gameplay_modules/stats/README.md`**
 
-Replace `gameplay_modules/stats/README.md` with:
+Replace `gameplay_modules/stats/README.md` with expanded docs that preserve the base and demo install commands introduced in Task 5:
 
 ````markdown
 # Stats Gameplay Module
@@ -1986,7 +2067,7 @@ godot-playwright validate /path/to/project --exclude "addons/godot_playwright/**
 
 - [ ] **Step 4: Expand `gameplay_modules/stats/AGENT.md`**
 
-Replace `gameplay_modules/stats/AGENT.md` with:
+Replace `gameplay_modules/stats/AGENT.md` with expanded docs that preserve the base and demo install commands introduced in Task 5:
 
 ````markdown
 # Agent Instructions: stats
@@ -2064,16 +2145,16 @@ cp gameplay_modules/stats/README.md godot_playwright/bundled_gameplay_modules/st
 cp gameplay_modules/stats/AGENT.md godot_playwright/bundled_gameplay_modules/stats/AGENT.md
 ```
 
-- [ ] **Step 6: Update top-level README module section**
+- [ ] **Step 6: Expand top-level README module section**
 
-In `README.md`, add these commands to the gameplay module command block:
+Ensure the gameplay module command block still includes the stats commands introduced in Task 5:
 
 ```sh
 godot-playwright module add /tmp/agent-game stats
 godot-playwright module add /tmp/agent-game stats --demo
 ```
 
-Add this short description after the `interaction` module paragraph:
+Ensure the stats description introduced in Task 5 is present after the `interaction` module paragraph:
 
 ```markdown
 The `stats` module adds a reusable `StatContainer` node backed by `StatDefinition` and `StatDatabase` Resources. It supports base/current values, pool stats such as health or stamina, min/max clamping, change/depletion/fill signals, JSON-compatible `get_state()` / `apply_state(data)`, and optional persistence through `save_load` when a container has a stable `save_id`.

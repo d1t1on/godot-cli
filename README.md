@@ -148,6 +148,8 @@ godot-playwright module add /tmp/agent-game interaction
 godot-playwright module add /tmp/agent-game interaction --demo
 godot-playwright module add /tmp/agent-game effects
 godot-playwright module add /tmp/agent-game effects --demo
+godot-playwright module add /tmp/agent-game stats
+godot-playwright module add /tmp/agent-game stats --demo
 ```
 
 The first gameplay module is `save_load`, a JSON slot save/load service. The
@@ -172,6 +174,8 @@ Autoload. Games create `EffectDefinition` resources, collect them in an
 `EffectDatabase`, and use `add_effect()` / `update_effects()` / `get_state()` to
 manage active effects with optional `save_load` persistence through stable
 `save_id` values.
+
+The `stats` module adds a reusable `StatContainer` node backed by `StatDefinition` and `StatDatabase` Resources. It supports base/current values, pool stats such as health or stamina, min/max clamping, change/depletion/fill signals, JSON-compatible `get_state()` / `apply_state(data)`, and optional persistence through `save_load` when a container has a stable `save_id`.
 
 Probe runtime startup for script errors and warning/error log diagnostics:
 

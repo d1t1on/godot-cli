@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="StatDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/stats/stat_definition.gd" id="1_stat_definition"]
+
+[resource]
+script = ExtResource("1_stat_definition")
+stat_id = &"health"
+display_name = "Health"
+description = "Current life pool."
+tags = Array[StringName]([&"pool", &"survival"])
+default_base_value = 100.0
+default_current_value = 100.0
+clamp_min = true
+min_value = 0.0
+clamp_max = false
+max_value = 100.0
+is_pool = true
