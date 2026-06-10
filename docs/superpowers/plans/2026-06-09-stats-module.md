@@ -86,13 +86,22 @@ In `tests/test_modules.py`, add these methods inside `ModuleInstallerUnitTests` 
             self.assertFalse(report["demo"])
             self.assertEqual(report["module"], "stats")
             self.assertEqual(report["autoloads"], [])
-            self.assertTrue((project / "addons" / "stats" / "stat_container.gd").exists())
-            self.assertTrue((project / "addons" / "stats" / "stat_definition.gd").exists())
-            self.assertTrue((project / "addons" / "stats" / "stat_database.gd").exists())
+            expected_scripts = {
+                "stat_constants.gd",
+                "stat_result.gd",
+                "stat_definition.gd",
+                "stat_database.gd",
+                "stat_container.gd",
+            }
+            for script_name in expected_scripts:
+                self.assertTrue((project / "addons" / "stats" / script_name).exists(), script_name)
             project_text = (project / "project.godot").read_text(encoding="utf-8")
             self.assertNotIn("StatsService", project_text)
             copied_targets = {entry["target"] for entry in report["copied"]}
-            self.assertIn("res://addons/stats/stat_container.gd", copied_targets)
+            self.assertTrue(
+                {f"res://addons/stats/{script_name}" for script_name in expected_scripts}.issubset(copied_targets),
+                copied_targets,
+            )
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -126,14 +135,6 @@ Create `gameplay_modules/stats/module.json`:
     {"from": "addons/stats", "to": "addons/stats"}
   ],
   "autoloads": [],
-  "demo": {
-    "copy": [
-      {"from": "demo/scenes", "to": "scenes/stats_demo"},
-      {"from": "demo/scripts", "to": "scripts/stats_demo"},
-      {"from": "demo/resources", "to": "resources/stats_demo"},
-      {"from": "tests", "to": "tests/stats_demo"}
-    ]
-  },
   "validation": {
     "commands": [
       "godot-playwright check-scripts /path/to/project res://addons/stats --exclude addons/godot_playwright/**",
@@ -156,12 +157,6 @@ Install into a Godot project:
 godot-playwright module add /path/to/project stats
 ```
 
-Install the demo scene and copied demo test:
-
-```sh
-godot-playwright module add /path/to/project stats --demo
-```
-
 The installer copies `res://addons/stats/`. It does not register an Autoload.
 ````
 
@@ -176,12 +171,6 @@ Install with:
 
 ```sh
 godot-playwright module add /path/to/project stats
-```
-
-Use `--demo` only when adding a demo scene and copied test is acceptable:
-
-```sh
-godot-playwright module add /path/to/project stats --demo
 ```
 ````
 
@@ -1292,6 +1281,7 @@ git commit -m "Validate stats runtime behavior"
 
 **Files:**
 - Modify: `tests/test_modules.py`
+- Modify: `gameplay_modules/stats/module.json`
 - Create: `gameplay_modules/stats/demo/resources/health.tres`
 - Create: `gameplay_modules/stats/demo/resources/stamina.tres`
 - Create: `gameplay_modules/stats/demo/resources/move_speed.tres`
@@ -1692,7 +1682,22 @@ def test_stats_demo_runs(godot):
     assert result["missing_stat_ok"] is False
 ```
 
-- [ ] **Step 6: Run tests to verify they pass**
+- [ ] **Step 6: Add demo copy block to the module manifest**
+
+Update `gameplay_modules/stats/module.json` to add the demo copy block after `autoloads`:
+
+```json
+  "demo": {
+    "copy": [
+      {"from": "demo/scenes", "to": "scenes/stats_demo"},
+      {"from": "demo/scripts", "to": "scripts/stats_demo"},
+      {"from": "demo/resources", "to": "resources/stats_demo"},
+      {"from": "tests", "to": "tests/stats_demo"}
+    ]
+  },
+```
+
+- [ ] **Step 7: Run tests to verify they pass**
 
 Run:
 
@@ -1710,7 +1715,7 @@ python -m unittest tests.test_modules.StatsModuleGodotTests.test_installed_stats
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```sh
 git add tests/test_modules.py gameplay_modules/stats

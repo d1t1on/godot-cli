@@ -160,13 +160,22 @@ class ModuleInstallerUnitTests(unittest.TestCase):
             self.assertFalse(report["demo"])
             self.assertEqual(report["module"], "stats")
             self.assertEqual(report["autoloads"], [])
-            self.assertTrue((project / "addons" / "stats" / "stat_container.gd").exists())
-            self.assertTrue((project / "addons" / "stats" / "stat_definition.gd").exists())
-            self.assertTrue((project / "addons" / "stats" / "stat_database.gd").exists())
+            expected_scripts = {
+                "stat_constants.gd",
+                "stat_result.gd",
+                "stat_definition.gd",
+                "stat_database.gd",
+                "stat_container.gd",
+            }
+            for script_name in expected_scripts:
+                self.assertTrue((project / "addons" / "stats" / script_name).exists(), script_name)
             project_text = (project / "project.godot").read_text(encoding="utf-8")
             self.assertNotIn("StatsService", project_text)
             copied_targets = {entry["target"] for entry in report["copied"]}
-            self.assertIn("res://addons/stats/stat_container.gd", copied_targets)
+            self.assertTrue(
+                {f"res://addons/stats/{script_name}" for script_name in expected_scripts}.issubset(copied_targets),
+                copied_targets,
+            )
 
     def test_add_interaction_module_with_demo_copies_demo_assets(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
