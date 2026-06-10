@@ -318,10 +318,17 @@ In `tests/test_modules.py`, add this method inside `ModuleInstallerUnitTests` ne
         self.assertIn("func has_stat(stat_id: String) -> bool", database)
         self.assertIn("func get_stat_ids() -> Array[String]", database)
         self.assertIn("func validate() -> Dictionary", database)
+        self.assertIn("stats[%d] is null", database)
+        self.assertIn("must be a StatDefinition", database)
+        self.assertIn("stat_id must be non-empty", database)
+        self.assertIn("must not contain leading or trailing whitespace", database)
         self.assertIn("Duplicate stat_id", database)
         self.assertIn("ids.append(raw_stat_id)", database)
         self.assertIn("_is_finite_number", database)
         self.assertIn("default_base_value must be finite", database)
+        self.assertIn("default_current_value must be finite", database)
+        self.assertIn("min_value must be finite", database)
+        self.assertIn("max_value must be finite", database)
         self.assertIn("min_value must be <= max_value", database)
         self.assertIn("class_name StatResult", result)
         self.assertIn('"ok": ok', result)
@@ -503,7 +510,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```sh
-git add tests/test_modules.py gameplay_modules/stats/addons/stats/stat_result.gd gameplay_modules/stats/addons/stats/stat_database.gd
+git add tests/test_modules.py gameplay_modules/stats/addons/stats/stat_result.gd gameplay_modules/stats/addons/stats/stat_database.gd docs/superpowers/plans/2026-06-09-stats-module.md
 git commit -m "Add stats resource helpers"
 ```
 
