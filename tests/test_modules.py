@@ -404,14 +404,26 @@ class ModuleInstallerUnitTests(unittest.TestCase):
             self.assertIn("interaction_id", agent)
             self.assertIn("SaveService", agent)
 
-    def test_readme_gameplay_module_commands_include_inventory_and_interaction_demos(self) -> None:
+    def test_stats_docs_exist_for_humans_and_agents(self) -> None:
+        source_root = default_module_roots()[0] / "stats"
+        bundled_root = default_module_roots()[1] / "stats"
+        for root in (source_root, bundled_root):
+            readme = (root / "README.md").read_text(encoding="utf-8")
+            agent = (root / "AGENT.md").read_text(encoding="utf-8")
+            self.assertIn("godot-playwright module add /path/to/project stats", readme)
+            self.assertIn("StatContainer.set_value", readme)
+            self.assertIn("StatDefinition", readme)
+            self.assertIn("pool", readme)
+            self.assertIn("save_load", readme)
+            self.assertIn("stat_id", agent)
+            self.assertIn("Resource", agent)
+            self.assertIn("SaveService", agent)
+            self.assertIn("combat", agent)
+
+    def test_readme_gameplay_module_commands_include_current_modules(self) -> None:
         readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
 
-        self.assertIn(
-            "godot-playwright module add /tmp/agent-game inventory --demo",
-            readme,
-            "top-level README should keep the inventory demo command",
-        )
+        self.assertIn("godot-playwright module add /tmp/agent-game inventory --demo", readme)
         self.assertIn("godot-playwright module add /tmp/agent-game interaction", readme)
         self.assertIn("godot-playwright module add /tmp/agent-game interaction --demo", readme)
         self.assertIn("godot-playwright module add /tmp/agent-game stats", readme)
