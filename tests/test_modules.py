@@ -66,6 +66,7 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertEqual(stats["version"], "0.1.0")
         self.assertEqual(stats["godot_version"], ">=4.6")
         self.assertEqual(stats["autoloads"], [])
+        self.assertNotIn("demo", stats)
 
     def test_add_inventory_module_copies_files_without_autoload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

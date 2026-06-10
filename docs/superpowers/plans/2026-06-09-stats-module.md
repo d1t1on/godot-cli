@@ -74,6 +74,7 @@ In `tests/test_modules.py`, add these methods inside `ModuleInstallerUnitTests` 
         self.assertEqual(stats["version"], "0.1.0")
         self.assertEqual(stats["godot_version"], ">=4.6")
         self.assertEqual(stats["autoloads"], [])
+        self.assertNotIn("demo", stats)
 
     def test_add_stats_module_copies_files_without_autoload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1282,6 +1283,9 @@ git commit -m "Validate stats runtime behavior"
 **Files:**
 - Modify: `tests/test_modules.py`
 - Modify: `gameplay_modules/stats/module.json`
+- Modify: `gameplay_modules/stats/README.md`
+- Modify: `gameplay_modules/stats/AGENT.md`
+- Modify: `README.md`
 - Create: `gameplay_modules/stats/demo/resources/health.tres`
 - Create: `gameplay_modules/stats/demo/resources/stamina.tres`
 - Create: `gameplay_modules/stats/demo/resources/move_speed.tres`
@@ -1697,7 +1701,44 @@ Update `gameplay_modules/stats/module.json` to add the demo copy block after `au
   },
 ```
 
-- [ ] **Step 7: Run tests to verify they pass**
+- [ ] **Step 7: Add demo install commands to source module docs**
+
+Update `gameplay_modules/stats/README.md` to include the demo install command after the base install command:
+
+````markdown
+Install the demo scene and copied demo test:
+
+```sh
+godot-playwright module add /path/to/project stats --demo
+```
+````
+
+Update `gameplay_modules/stats/AGENT.md` to include the demo install command after the base install command:
+
+````markdown
+Use `--demo` only when adding a demo scene and copied test is acceptable:
+
+```sh
+godot-playwright module add /path/to/project stats --demo
+```
+````
+
+- [ ] **Step 8: Add stats commands and summary to top-level README**
+
+In `README.md`, add these commands to the gameplay module command block:
+
+```sh
+godot-playwright module add /tmp/agent-game stats
+godot-playwright module add /tmp/agent-game stats --demo
+```
+
+Add this short description after the `interaction` module paragraph:
+
+```markdown
+The `stats` module adds a reusable `StatContainer` node backed by `StatDefinition` and `StatDatabase` Resources. It supports base/current values, pool stats such as health or stamina, min/max clamping, change/depletion/fill signals, JSON-compatible `get_state()` / `apply_state(data)`, and optional persistence through `save_load` when a container has a stable `save_id`.
+```
+
+- [ ] **Step 9: Run tests to verify they pass**
 
 Run:
 
@@ -1715,10 +1756,10 @@ python -m unittest tests.test_modules.StatsModuleGodotTests.test_installed_stats
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 10: Commit**
 
 ```sh
-git add tests/test_modules.py gameplay_modules/stats
+git add tests/test_modules.py README.md gameplay_modules/stats
 git commit -m "Add stats gameplay module demo"
 ```
 
@@ -1874,7 +1915,7 @@ In `tests/test_modules.py`, add this method inside `ModuleInstallerUnitTests` ne
             self.assertIn("combat", agent)
 ```
 
-Update `test_readme_gameplay_module_commands_include_inventory_and_interaction_demos` to include stats checks and rename it to `test_readme_gameplay_module_commands_include_current_modules`:
+Update `test_readme_gameplay_module_commands_include_inventory_and_interaction_demos` to include stats checks from Task 5 and rename it to `test_readme_gameplay_module_commands_include_current_modules`:
 
 ```python
     def test_readme_gameplay_module_commands_include_current_modules(self) -> None:
@@ -1899,7 +1940,7 @@ Expected: FAIL because docs are incomplete and top-level README does not mention
 
 - [ ] **Step 3: Expand `gameplay_modules/stats/README.md`**
 
-Replace `gameplay_modules/stats/README.md` with:
+Replace `gameplay_modules/stats/README.md` with expanded docs that preserve the base and demo install commands introduced in Task 5:
 
 ````markdown
 # Stats Gameplay Module
@@ -1991,7 +2032,7 @@ godot-playwright validate /path/to/project --exclude "addons/godot_playwright/**
 
 - [ ] **Step 4: Expand `gameplay_modules/stats/AGENT.md`**
 
-Replace `gameplay_modules/stats/AGENT.md` with:
+Replace `gameplay_modules/stats/AGENT.md` with expanded docs that preserve the base and demo install commands introduced in Task 5:
 
 ````markdown
 # Agent Instructions: stats
@@ -2069,16 +2110,16 @@ cp gameplay_modules/stats/README.md godot_playwright/bundled_gameplay_modules/st
 cp gameplay_modules/stats/AGENT.md godot_playwright/bundled_gameplay_modules/stats/AGENT.md
 ```
 
-- [ ] **Step 6: Update top-level README module section**
+- [ ] **Step 6: Expand top-level README module section**
 
-In `README.md`, add these commands to the gameplay module command block:
+Ensure the gameplay module command block still includes the stats commands introduced in Task 5:
 
 ```sh
 godot-playwright module add /tmp/agent-game stats
 godot-playwright module add /tmp/agent-game stats --demo
 ```
 
-Add this short description after the `interaction` module paragraph:
+Ensure the stats description introduced in Task 5 is present after the `interaction` module paragraph:
 
 ```markdown
 The `stats` module adds a reusable `StatContainer` node backed by `StatDefinition` and `StatDatabase` Resources. It supports base/current values, pool stats such as health or stamina, min/max clamping, change/depletion/fill signals, JSON-compatible `get_state()` / `apply_state(data)`, and optional persistence through `save_load` when a container has a stable `save_id`.
