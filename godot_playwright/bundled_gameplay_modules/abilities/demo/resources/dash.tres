@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/abilities/ability_definition.gd" id="1_dash_script"]
+
+[resource]
+script = ExtResource("1_dash_script")
+ability_id = &"dash"
+display_name = "Dash"
+description = "Short movement burst. The stamina cost is reported in activation results but not spent."
+tags = Array[StringName]([&"movement"])
+cooldown = 0.5
+max_charges = 1
+initial_charges = 1
+charge_recovery_time = 0.5
+costs = {"stamina": 20.0}
+default_data = {"range": 4.0}

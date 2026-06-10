@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/abilities/ability_definition.gd" id="1_scan_script"]
+
+[resource]
+script = ExtResource("1_scan_script")
+ability_id = &"scan"
+display_name = "Scan"
+description = "A no-charge utility action with a cooldown."
+tags = Array[StringName]([&"utility"])
+cooldown = 1.0
+max_charges = 0
+initial_charges = 0
+default_data = {"range": 6.0}

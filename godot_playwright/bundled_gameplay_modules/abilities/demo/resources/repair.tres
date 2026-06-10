@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="AbilityDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/abilities/ability_definition.gd" id="1_repair_script"]
+
+[resource]
+script = ExtResource("1_repair_script")
+ability_id = &"repair"
+display_name = "Repair"
+description = "A multi-charge action. The abilities module reports material cost but does not spend inventory."
+tags = Array[StringName]([&"utility", &"tool"])
+cooldown = 0.0
+max_charges = 2
+initial_charges = 2
+charge_recovery_time = 2.0
+costs = {"parts": 1}
+default_data = {"amount": 15.0}

@@ -338,6 +338,13 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertEqual(manifest["autoloads"], [])
         self.assertTrue((bundled_root / "stats" / "addons" / "stats" / "stat_container.gd").exists())
 
+    def test_packaged_abilities_module_mirror_exists(self) -> None:
+        bundled_root = default_module_roots()[1]
+        manifest = load_module_manifest("abilities", module_root=bundled_root)
+        self.assertEqual(manifest["name"], "abilities")
+        self.assertEqual(manifest["autoloads"], [])
+        self.assertTrue((bundled_root / "abilities" / "addons" / "abilities" / "ability_container.gd").exists())
+
     def test_pyproject_includes_bundled_gameplay_module_data(self) -> None:
         pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn('"bundled_addons/godot_playwright/*"', pyproject)
@@ -374,6 +381,12 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn('"bundled_gameplay_modules/stats/demo/scripts/*"', pyproject)
         self.assertIn('"bundled_gameplay_modules/stats/demo/resources/*"', pyproject)
         self.assertIn('"bundled_gameplay_modules/stats/tests/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/abilities/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/abilities/addons/abilities/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/abilities/demo/scenes/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/abilities/demo/scripts/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/abilities/demo/resources/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/abilities/tests/*"', pyproject)
 
     def test_source_and_packaged_save_load_trees_are_identical(self) -> None:
         source_root, bundled_root = default_module_roots()
@@ -458,6 +471,21 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         source_root, bundled_root = default_module_roots()
         source = source_root / "stats"
         bundled = bundled_root / "stats"
+        source_files = sorted(path.relative_to(source) for path in source.rglob("*") if path.is_file())
+        bundled_files = sorted(path.relative_to(bundled) for path in bundled.rglob("*") if path.is_file())
+
+        self.assertEqual([path.as_posix() for path in source_files], [path.as_posix() for path in bundled_files])
+        for relative_path in source_files:
+            self.assertEqual(
+                (source / relative_path).read_bytes(),
+                (bundled / relative_path).read_bytes(),
+                relative_path.as_posix(),
+            )
+
+    def test_source_and_packaged_abilities_trees_are_identical(self) -> None:
+        source_root, bundled_root = default_module_roots()
+        source = source_root / "abilities"
+        bundled = bundled_root / "abilities"
         source_files = sorted(path.relative_to(source) for path in source.rglob("*") if path.is_file())
         bundled_files = sorted(path.relative_to(bundled) for path in bundled.rglob("*") if path.is_file())
 

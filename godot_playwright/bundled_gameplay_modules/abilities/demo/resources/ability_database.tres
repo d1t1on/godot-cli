@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="AbilityDatabase" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://addons/abilities/ability_database.gd" id="1_database_script"]
+[ext_resource type="Resource" path="res://resources/abilities_demo/dash.tres" id="2_dash"]
+[ext_resource type="Resource" path="res://resources/abilities_demo/scan.tres" id="3_scan"]
+[ext_resource type="Resource" path="res://resources/abilities_demo/repair.tres" id="4_repair"]
+
+[resource]
+script = ExtResource("1_database_script")
+abilities = Array[Resource]([ExtResource("2_dash"), ExtResource("3_scan"), ExtResource("4_repair")])
