@@ -60,6 +60,13 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertEqual(interaction["godot_version"], ">=4.6")
         self.assertEqual(interaction["autoloads"], [])
 
+    def test_repository_stats_module_is_discoverable(self) -> None:
+        modules = list_modules()
+        stats = next(module for module in modules if module["name"] == "stats")
+        self.assertEqual(stats["version"], "0.1.0")
+        self.assertEqual(stats["godot_version"], ">=4.6")
+        self.assertEqual(stats["autoloads"], [])
+
     def test_add_inventory_module_copies_files_without_autoload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -141,6 +148,25 @@ class ModuleInstallerUnitTests(unittest.TestCase):
             self.assertNotIn("InteractionService", project_text)
             copied_targets = {entry["target"] for entry in report["copied"]}
             self.assertIn("res://addons/interaction/interactable.gd", copied_targets)
+
+    def test_add_stats_module_copies_files_without_autoload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = _write_project(root / "project")
+
+            report = add_module(project, "stats")
+
+            self.assertTrue(report["ok"], report)
+            self.assertFalse(report["demo"])
+            self.assertEqual(report["module"], "stats")
+            self.assertEqual(report["autoloads"], [])
+            self.assertTrue((project / "addons" / "stats" / "stat_container.gd").exists())
+            self.assertTrue((project / "addons" / "stats" / "stat_definition.gd").exists())
+            self.assertTrue((project / "addons" / "stats" / "stat_database.gd").exists())
+            project_text = (project / "project.godot").read_text(encoding="utf-8")
+            self.assertNotIn("StatsService", project_text)
+            copied_targets = {entry["target"] for entry in report["copied"]}
+            self.assertIn("res://addons/stats/stat_container.gd", copied_targets)
 
     def test_add_interaction_module_with_demo_copies_demo_assets(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
