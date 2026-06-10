@@ -5,7 +5,8 @@
 [resource]
 script = ExtResource("1_repair_script")
 ability_id = &"repair"
-description = "Restores durability. The parts cost is reported in activation results but not spent."
+display_name = "Repair"
+description = "A multi-charge action. The abilities module reports material cost but does not spend inventory."
 tags = Array[StringName]([&"utility", &"tool"])
 cooldown = 0.0
 max_charges = 2

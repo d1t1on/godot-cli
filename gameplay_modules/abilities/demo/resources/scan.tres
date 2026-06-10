@@ -5,6 +5,8 @@
 [resource]
 script = ExtResource("1_scan_script")
 ability_id = &"scan"
+display_name = "Scan"
+description = "A no-charge utility action with a cooldown."
 tags = Array[StringName]([&"utility"])
 cooldown = 1.0
 max_charges = 0
