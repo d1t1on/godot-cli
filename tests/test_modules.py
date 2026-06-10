@@ -642,6 +642,40 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn("static func add_error", result)
         self.assertIn("const SCHEMA_VERSION: int = 1", constants)
 
+    def test_abilities_source_defines_container_api(self) -> None:
+        source_root = default_module_roots()[0]
+        container = (source_root / "abilities" / "addons" / "abilities" / "ability_container.gd").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("class_name AbilityContainer", container)
+        self.assertIn("@export var database: Resource", container)
+        self.assertIn("@export var save_id: StringName", container)
+        self.assertIn("@export var initialize_on_ready: bool = true", container)
+        self.assertIn("@export var auto_update: bool = true", container)
+        self.assertIn("signal ability_activated", container)
+        self.assertIn("signal ability_failed", container)
+        self.assertIn("signal ability_enabled_changed", container)
+        self.assertIn("signal ability_cooldown_ready", container)
+        self.assertIn("signal ability_charge_recovered", container)
+        self.assertIn("signal abilities_changed", container)
+        self.assertIn("func initialize_abilities(reset: bool = false) -> Dictionary", container)
+        self.assertIn("func has_ability(ability_id: String) -> bool", container)
+        self.assertIn("func can_activate(ability_id: String, context: Dictionary = {}) -> Dictionary", container)
+        self.assertIn("func activate(ability_id: String, context: Dictionary = {}) -> Dictionary", container)
+        self.assertIn("func set_enabled(ability_id: String, enabled: bool) -> Dictionary", container)
+        self.assertIn("func is_enabled(ability_id: String) -> bool", container)
+        self.assertIn("func get_ability_runtime(ability_id: String) -> Dictionary", container)
+        self.assertIn("func get_abilities() -> Array", container)
+        self.assertIn("func update_abilities(delta: float) -> Array[Dictionary]", container)
+        self.assertIn("func clear_runtime_state() -> void", container)
+        self.assertIn("func get_state() -> Dictionary", container)
+        self.assertIn("func apply_state(data: Dictionary) -> Dictionary", container)
+        self.assertIn("func save_state() -> Dictionary", container)
+        self.assertIn("func load_state(data: Dictionary) -> void", container)
+        self.assertIn("AbilityConstantsData.SCHEMA_VERSION", container)
+        self.assertIn("_parse_integer_field", container)
+
     def test_stats_source_defines_resource_helpers(self) -> None:
         source_root = default_module_roots()[0]
         stats_root = source_root / "stats" / "addons" / "stats"
@@ -1096,6 +1130,26 @@ class AbilitiesModuleGodotTests(unittest.TestCase):
 
             with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
                 result = godot.locator("#AbilitiesDatabaseProbe").call("run_probe")
+
+        self.assertTrue(result["ok"], result)
+
+    def test_ability_container_runtime_runs_in_godot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Abilities Container Probe")
+            add_module(project, "abilities")
+            _write_abilities_container_probe(project)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/abilities_container_probe.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#AbilitiesContainerProbe").call("run_probe")
 
         self.assertTrue(result["ok"], result)
 
@@ -2220,6 +2274,190 @@ def _write_abilities_database_probe(project: Path) -> None:
             [ext_resource type="Script" path="res://scripts/abilities_database_probe.gd" id="1_probe_script"]
 
             [node name="AbilitiesDatabaseProbe" type="Node"]
+            script = ExtResource("1_probe_script")
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_abilities_container_probe(project: Path) -> None:
+    (project / "scripts" / "abilities_container_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            const AbilityDefinitionData := preload("res://addons/abilities/ability_definition.gd")
+            const AbilityDatabaseData := preload("res://addons/abilities/ability_database.gd")
+            const AbilityContainerData := preload("res://addons/abilities/ability_container.gd")
+
+
+            func run_probe() -> Dictionary:
+                var errors: Array[String] = []
+                var database := _make_database()
+                var container := AbilityContainerData.new()
+                container.initialize_on_ready = false
+                container.auto_update = false
+                container.database = database
+                add_child(container)
+
+                var init_result: Dictionary = container.initialize_abilities()
+                _assert_ok(init_result, "initialize_abilities", errors)
+                _assert_int(3, container.get_abilities().size(), "initialized ability count", errors)
+
+                var before_can_dash: Dictionary = container.get_ability_runtime("dash")
+                var can_dash: Dictionary = container.can_activate("dash", {"actor_id": "probe"})
+                _assert_ok(can_dash, "can_activate dash", errors)
+                var after_can_dash: Dictionary = container.get_ability_runtime("dash")
+                _assert_int(int(before_can_dash.get("charges", -1)), int(after_can_dash.get("charges", -2)), "can_activate should not spend charges", errors)
+                _assert_float(float(before_can_dash.get("cooldown_remaining", -1.0)), float(after_can_dash.get("cooldown_remaining", -2.0)), "can_activate should not start cooldown", errors)
+
+                var dash_context := {"actor_id": "probe", "target": [1.0, 2.0]}
+                var activate_dash: Dictionary = container.activate("dash", dash_context)
+                _assert_ok(activate_dash, "activate dash", errors)
+                _assert_float(20.0, float(activate_dash.get("costs", {}).get("stamina", 0.0)), "dash reported stamina cost", errors)
+                _assert_float(4.0, float(activate_dash.get("data", {}).get("range", 0.0)), "dash reported range data", errors)
+                _assert_string("probe", String(activate_dash.get("context", {}).get("actor_id", "")), "dash reported context", errors)
+                var dash_runtime: Dictionary = container.get_ability_runtime("dash")
+                _assert_int(0, int(dash_runtime.get("charges", -1)), "dash charges after activation", errors)
+                _assert_float(0.5, float(dash_runtime.get("cooldown_remaining", -1.0)), "dash cooldown after activation", errors)
+
+                var before_second_dash: Dictionary = container.get_ability_runtime("dash")
+                var second_dash: Dictionary = container.activate("dash")
+                _assert_error(second_dash, "cooldown", "second dash activation", errors)
+                var after_second_dash: Dictionary = container.get_ability_runtime("dash")
+                _assert_int(int(before_second_dash.get("charges", -1)), int(after_second_dash.get("charges", -2)), "failed dash should not spend charges", errors)
+                _assert_float(float(before_second_dash.get("cooldown_remaining", -1.0)), float(after_second_dash.get("cooldown_remaining", -2.0)), "failed dash should not change cooldown", errors)
+
+                var dash_events: Array[Dictionary] = container.update_abilities(0.5)
+                _assert_has_event(dash_events, "ability_cooldown_ready", "dash", "dash cooldown ready event", errors)
+                _assert_has_event(dash_events, "ability_charge_recovered", "dash", "dash charge recovered event", errors)
+                var dash_after_update: Dictionary = container.get_ability_runtime("dash")
+                _assert_int(1, int(dash_after_update.get("charges", -1)), "dash charge recovered", errors)
+                _assert_float(0.0, float(dash_after_update.get("cooldown_remaining", -1.0)), "dash cooldown recovered", errors)
+
+                var disable_scan: Dictionary = container.set_enabled("scan", false)
+                _assert_ok(disable_scan, "disable scan", errors)
+                _assert_bool(not container.is_enabled("scan"), "scan should be disabled", errors)
+                _assert_error(container.activate("scan"), "disabled", "disabled scan activation", errors)
+                var enable_scan: Dictionary = container.set_enabled("scan", true)
+                _assert_ok(enable_scan, "enable scan", errors)
+                _assert_ok(container.activate("scan"), "enabled scan activation", errors)
+
+                _assert_ok(container.activate("repair"), "first repair", errors)
+                _assert_ok(container.activate("repair"), "second repair", errors)
+                var repair_empty: Dictionary = container.get_ability_runtime("repair")
+                _assert_int(0, int(repair_empty.get("charges", -1)), "repair charges after two activations", errors)
+                var repair_events: Array[Dictionary] = container.update_abilities(0.25)
+                _assert_has_event(repair_events, "ability_charge_recovered", "repair", "repair charge recovered event", errors)
+                var repair_after_update: Dictionary = container.get_ability_runtime("repair")
+                _assert_int(1, int(repair_after_update.get("charges", -1)), "repair recovered one charge", errors)
+
+                var before_negative: Array = container.get_abilities()
+                var negative_events: Array[Dictionary] = container.update_abilities(-1.0)
+                _assert_int(1, negative_events.size(), "negative delta event count", errors)
+                if negative_events.size() == 1:
+                    _assert_error(negative_events[0], "delta", "negative delta event", errors)
+                _assert_runtime_arrays_equal(before_negative, container.get_abilities(), "negative delta should not mutate state", errors)
+
+                return {"ok": errors.is_empty(), "errors": errors}
+
+
+            func _make_database() -> Resource:
+                var dash := AbilityDefinitionData.new()
+                dash.ability_id = &"dash"
+                dash.cooldown = 0.5
+                dash.max_charges = 1
+                dash.initial_charges = 1
+                dash.costs = {"stamina": 20.0}
+                dash.default_data = {"range": 4.0}
+
+                var scan := AbilityDefinitionData.new()
+                scan.ability_id = &"scan"
+                scan.max_charges = 0
+                scan.initial_charges = 0
+                scan.default_data = {"radius": 10.0}
+
+                var repair := AbilityDefinitionData.new()
+                repair.ability_id = &"repair"
+                repair.max_charges = 2
+                repair.initial_charges = 2
+                repair.charge_recovery_time = 0.25
+                repair.default_data = {"amount": 15.0}
+
+                var database := AbilityDatabaseData.new()
+                database.abilities.append(dash)
+                database.abilities.append(scan)
+                database.abilities.append(repair)
+                return database
+
+
+            func _assert_ok(result: Dictionary, label: String, errors: Array[String]) -> void:
+                if not bool(result.get("ok", false)):
+                    errors.append("%s failed: %s" % [label, str(result)])
+
+
+            func _assert_error(result: Dictionary, needle: String, label: String, errors: Array[String]) -> void:
+                if bool(result.get("ok", true)):
+                    errors.append("%s should fail" % label)
+                    return
+                for message in result.get("errors", []):
+                    if String(message).contains(needle):
+                        return
+                errors.append("%s missing %s in %s" % [label, needle, str(result)])
+
+
+            func _assert_has_event(events: Array, event_type: String, ability_id: String, label: String, errors: Array[String]) -> void:
+                for event in events:
+                    if String(event.get("type", "")) == event_type and String(event.get("ability_id", "")) == ability_id:
+                        return
+                errors.append("%s missing %s for %s in %s" % [label, event_type, ability_id, str(events)])
+
+
+            func _assert_runtime_arrays_equal(expected: Array, actual: Array, label: String, errors: Array[String]) -> void:
+                if expected.size() != actual.size():
+                    errors.append("%s: expected %d abilities, got %d" % [label, expected.size(), actual.size()])
+                    return
+                for index in range(expected.size()):
+                    var expected_runtime: Dictionary = expected[index]
+                    var actual_runtime: Dictionary = actual[index]
+                    _assert_string(String(expected_runtime.get("ability_id", "")), String(actual_runtime.get("ability_id", "")), "%s ability_id %d" % [label, index], errors)
+                    _assert_bool(bool(expected_runtime.get("enabled", false)) == bool(actual_runtime.get("enabled", true)), "%s enabled %d" % [label, index], errors)
+                    _assert_int(int(expected_runtime.get("charges", -1)), int(actual_runtime.get("charges", -2)), "%s charges %d" % [label, index], errors)
+                    _assert_float(float(expected_runtime.get("cooldown_remaining", -1.0)), float(actual_runtime.get("cooldown_remaining", -2.0)), "%s cooldown %d" % [label, index], errors)
+                    _assert_float(float(expected_runtime.get("charge_recovery_remaining", -1.0)), float(actual_runtime.get("charge_recovery_remaining", -2.0)), "%s recovery %d" % [label, index], errors)
+
+
+            func _assert_bool(value: bool, message: String, errors: Array[String]) -> void:
+                if not value:
+                    errors.append(message)
+
+
+            func _assert_string(expected: String, actual: String, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %s, got %s" % [label, expected, actual])
+
+
+            func _assert_int(expected: int, actual: int, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %d, got %d" % [label, expected, actual])
+
+
+            func _assert_float(expected: float, actual: float, label: String, errors: Array[String]) -> void:
+                if absf(expected - actual) > 0.0001:
+                    errors.append("%s: expected %s, got %s" % [label, str(expected), str(actual)])
+            """
+        ),
+        encoding="utf-8",
+    )
+    (project / "scenes" / "abilities_container_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://scripts/abilities_container_probe.gd" id="1_probe_script"]
+
+            [node name="AbilitiesContainerProbe" type="Node"]
             script = ExtResource("1_probe_script")
             """
         ),
