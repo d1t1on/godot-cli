@@ -1681,10 +1681,11 @@ def _write_stats_container_probe(project: Path) -> None:
                 _assert_bool(not bool(bad_result.get("ok", true)), "missing stat should fail", errors)
                 _assert_contains(bad_result.get("errors", []), "Unknown stat_id: missing", "missing stat error", errors)
 
+                var before_bad_state: Dictionary = container.get_state()
                 var bad_state := {"schema_version": 1, "stats": [{"stat_id": "health", "base_value": 100.0, "current_value": 500.0}]}
                 var bad_state_result: Dictionary = container.apply_state(bad_state)
                 _assert_bool(not bool(bad_state_result.get("ok", true)), "bad state should fail", errors)
-                _assert_float(40.0, container.get_value("health"), "bad state should not mutate", errors)
+                _assert_dictionary(before_bad_state, container.get_state(), "bad state should not mutate", errors)
 
                 return {"ok": errors.is_empty(), "errors": errors, "events": events}
 
@@ -1724,6 +1725,11 @@ def _write_stats_container_probe(project: Path) -> None:
 
             func _assert_float(expected: float, actual: float, label: String, errors: Array[String]) -> void:
                 if not is_equal_approx(expected, actual):
+                    errors.append("%s: expected %s, got %s" % [label, str(expected), str(actual)])
+
+
+            func _assert_dictionary(expected: Dictionary, actual: Dictionary, label: String, errors: Array[String]) -> void:
+                if expected != actual:
                     errors.append("%s: expected %s, got %s" % [label, str(expected), str(actual)])
 
 
