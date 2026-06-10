@@ -303,7 +303,8 @@ func _clamp_current_value(definition: Resource, value: float, base_value: float,
 
 func _parse_state(data: Dictionary, result: Dictionary) -> Dictionary:
 	var parsed := {"stats_by_id": {}, "stat_ids": []}
-	if int(data.get("schema_version", -1)) != StatConstantsData.SCHEMA_VERSION:
+	var saved_schema := _parse_integer_field(data.get("schema_version", null), "schema_version", result)
+	if saved_schema != StatConstantsData.SCHEMA_VERSION:
 		StatResultData.add_error(result, "schema_version must be %d" % StatConstantsData.SCHEMA_VERSION)
 	var raw_stats = data.get("stats", null)
 	if not (raw_stats is Array):
@@ -371,6 +372,17 @@ func _parse_state(data: Dictionary, result: Dictionary) -> Dictionary:
 		parsed["stats_by_id"] = next_by_id
 		parsed["stat_ids"] = next_ids
 	return parsed
+
+
+func _parse_integer_field(value: Variant, field_name: String, result: Dictionary) -> int:
+	if typeof(value) == TYPE_INT:
+		return int(value)
+	if typeof(value) == TYPE_FLOAT:
+		var float_value := float(value)
+		if float_value == floor(float_value):
+			return int(float_value)
+	StatResultData.add_error(result, "%s must be an integer" % field_name)
+	return 0
 
 
 func _is_finite_number(value: Variant) -> bool:

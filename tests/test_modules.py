@@ -1913,6 +1913,7 @@ def _write_stats_container_review_probe(project: Path) -> None:
                 var errors: Array[String] = []
                 _validate_missing_stat_fill_uses_clamped_base(errors)
                 _validate_stale_runtime_stat_returns_error(errors)
+                _validate_malformed_schema_rejected_without_mutation(errors)
                 return {"ok": errors.is_empty(), "errors": errors}
 
 
@@ -1977,6 +1978,39 @@ def _write_stats_container_review_probe(project: Path) -> None:
                 container.queue_free()
 
 
+            func _validate_malformed_schema_rejected_without_mutation(errors: Array[String]) -> void:
+                var health = StatDefinitionData.new()
+                health.stat_id = &"health"
+                health.default_base_value = 10.0
+                health.default_current_value = 10.0
+
+                var database = StatDatabaseData.new()
+                database.stats.append(health)
+
+                var container = StatContainerData.new()
+                container.initialize_on_ready = false
+                container.database = database
+                add_child(container)
+
+                var initialize_result: Dictionary = container.initialize_stats()
+                _assert_bool(bool(initialize_result.get("ok", false)), "initialize_stats should succeed for malformed schema probe", errors)
+
+                var before_state: Dictionary = container.get_state()
+                var malformed_states: Array = [
+                    {"label": "fractional schema", "state": {"schema_version": 1.5, "stats": [{"stat_id": "health", "base_value": 9.0, "current_value": 9.0}]}},
+                    {"label": "string schema", "state": {"schema_version": "1", "stats": [{"stat_id": "health", "base_value": 8.0, "current_value": 8.0}]}},
+                ]
+                for entry in malformed_states:
+                    var label := String(entry["label"])
+                    var apply_result: Dictionary = container.apply_state(entry["state"])
+                    _assert_bool(not bool(apply_result.get("ok", true)), "%s should fail" % label, errors)
+                    _assert_contains(apply_result.get("errors", []), "schema_version", "%s schema error" % label, errors)
+                    _assert_contains(apply_result.get("errors", []), "integer", "%s integer error" % label, errors)
+                    _assert_dictionary(before_state, container.get_state(), "%s should not mutate" % label, errors)
+
+                container.queue_free()
+
+
             func _assert_bool(value: bool, message: String, errors: Array[String]) -> void:
                 if not value:
                     errors.append(message)
@@ -1984,6 +2018,11 @@ def _write_stats_container_review_probe(project: Path) -> None:
 
             func _assert_float(expected: float, actual: float, label: String, errors: Array[String]) -> void:
                 if not is_equal_approx(expected, actual):
+                    errors.append("%s: expected %s, got %s" % [label, str(expected), str(actual)])
+
+
+            func _assert_dictionary(expected: Dictionary, actual: Dictionary, label: String, errors: Array[String]) -> void:
+                if expected != actual:
                     errors.append("%s: expected %s, got %s" % [label, str(expected), str(actual)])
 
 
