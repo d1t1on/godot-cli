@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="ObjectiveDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/quests/objective_definition.gd" id="1_objective_script"]
+
+[resource]
+script = ExtResource("1_objective_script")
+objective_id = &"repair_beacon"
+display_name = "Repair Beacon"
+description = "Apply repairs to the beacon."
+tags = Array[StringName]([&"repair", &"tool"])
+target_amount = 1
+default_data = {"ability_id": "repair"}

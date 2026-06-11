@@ -8,6 +8,14 @@
     {"from": "addons/quests", "to": "addons/quests"}
   ],
   "autoloads": [],
+  "demo": {
+    "copy": [
+      {"from": "demo/scenes", "to": "scenes/quests_demo"},
+      {"from": "demo/scripts", "to": "scripts/quests_demo"},
+      {"from": "demo/resources", "to": "resources/quests_demo"},
+      {"from": "tests", "to": "tests/quests_demo"}
+    ]
+  },
   "validation": {
     "commands": [
       "godot-playwright check-scripts /path/to/project res://addons/quests --exclude addons/godot_playwright/**",

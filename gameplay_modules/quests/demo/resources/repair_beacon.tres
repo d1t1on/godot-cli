@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="QuestDefinition" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://addons/quests/quest_definition.gd" id="1_quest_script"]
+[ext_resource type="Resource" path="res://resources/quests_demo/collect_parts.tres" id="2_collect_parts"]
+[ext_resource type="Resource" path="res://resources/quests_demo/scan_beacon.tres" id="3_scan_beacon"]
+[ext_resource type="Resource" path="res://resources/quests_demo/repair_beacon_objective.tres" id="4_repair_beacon"]
+
+[resource]
+script = ExtResource("1_quest_script")
+quest_id = &"repair_beacon"
+display_name = "Repair Beacon"
+description = "A deterministic quest demo that tracks collection, scanning, and repair objectives."
+tags = Array[StringName]([&"demo", &"repair"])
+objectives = Array[Resource]([ExtResource("2_collect_parts"), ExtResource("3_scan_beacon"), ExtResource("4_repair_beacon")])
+completion_policy = "all"
+auto_complete = true
+start_active = false
+rewards = {"coins": 50, "reputation": 5}
+default_data = {"area": "north_field"}

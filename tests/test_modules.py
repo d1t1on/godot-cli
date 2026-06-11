@@ -331,6 +331,20 @@ class ModuleInstallerUnitTests(unittest.TestCase):
             self.assertTrue((project / "resources" / "stats_demo" / "stat_database.tres").exists())
             self.assertTrue((project / "tests" / "stats_demo" / "test_stats_demo.py").exists())
 
+    def test_add_quests_module_with_demo_copies_demo_assets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = _write_project(root / "project")
+
+            report = add_module(project, "quests", demo=True)
+
+            self.assertTrue(report["ok"], report)
+            self.assertTrue(report["demo"])
+            self.assertTrue((project / "scenes" / "quests_demo" / "quests_demo.tscn").exists())
+            self.assertTrue((project / "scripts" / "quests_demo" / "quests_demo.gd").exists())
+            self.assertTrue((project / "resources" / "quests_demo" / "quest_database.tres").exists())
+            self.assertTrue((project / "tests" / "quests_demo" / "test_quests_demo.py").exists())
+
     def test_packaged_save_load_module_mirror_exists(self) -> None:
         bundled_root = default_module_roots()[1]
         manifest = load_module_manifest("save_load", module_root=bundled_root)
@@ -1573,6 +1587,59 @@ class QuestsModuleGodotTests(unittest.TestCase):
                 result = godot.locator("#QuestsSaveLoadProbe").call("run_probe")
 
         self.assertTrue(result["ok"], result)
+
+    def test_installed_quests_scripts_parse(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Quests Parse Probe")
+            add_module(project, "quests", demo=True)
+
+            result = check_project_scripts(
+                project,
+                ["res://addons/quests", "res://scripts/quests_demo"],
+                exclude=["addons/godot_playwright/**"],
+            )
+
+        self.assertTrue(result["ok"], result["diagnostics"])
+
+    def test_installed_quests_demo_resources_are_valid(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Quests Resource Probe")
+            add_module(project, "quests", demo=True)
+
+            result = check_project_resources(
+                project,
+                ["res://scenes/quests_demo", "res://resources/quests_demo"],
+                exclude=["addons/godot_playwright/**"],
+            )
+
+        self.assertTrue(result["ok"], result["diagnostics"])
+
+    def test_quests_demo_runs_in_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Quests Demo Probe")
+            add_module(project, "quests", demo=True)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/quests_demo/quests_demo.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#QuestsDemo").call("run_quests_demo")
+
+        self.assertTrue(result["ok"], result.get("errors"))
+        self.assertEqual(result["quest_status"], "completed")
+        self.assertEqual(result["collect_progress"], 3)
+        self.assertEqual(result["scan_progress"], 1)
+        self.assertEqual(result["repair_progress"], 1)
+        self.assertEqual(result["rewards"]["coins"], 50)
+        self.assertEqual(result["rewards"]["reputation"], 5)
 
 
 @unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
