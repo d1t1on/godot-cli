@@ -85,13 +85,57 @@ func start_quest(quest_id: String, data: Dictionary = {}) -> Dictionary:
 	return result
 
 
+func advance_objective(quest_id: String, objective_id: String, amount: int = 1, data: Dictionary = {}) -> Dictionary:
+	var normalized_quest := quest_id.strip_edges()
+	var normalized_objective := objective_id.strip_edges()
+	var result := QuestResultData.make(true, normalized_quest, normalized_objective)
+	if amount <= 0:
+		QuestResultData.add_error(result, "amount must be positive")
+		return result
+	return _set_objective_progress(normalized_quest, normalized_objective, amount, true, data)
+
+
+func set_objective_progress(quest_id: String, objective_id: String, amount: int, data: Dictionary = {}) -> Dictionary:
+	var normalized_quest := quest_id.strip_edges()
+	var normalized_objective := objective_id.strip_edges()
+	var result := QuestResultData.make(true, normalized_quest, normalized_objective)
+	if amount < 0:
+		QuestResultData.add_error(result, "amount must be zero or greater")
+		return result
+	return _set_objective_progress(normalized_quest, normalized_objective, amount, false, data)
+
+
+func complete_objective(quest_id: String, objective_id: String, data: Dictionary = {}) -> Dictionary:
+	var normalized_quest := quest_id.strip_edges()
+	var normalized_objective := objective_id.strip_edges()
+	var result := QuestResultData.make(true, normalized_quest, normalized_objective)
+	if not _validate_objective_mutation(result, normalized_quest, normalized_objective, data):
+		return result
+	var objective := _get_objective_runtime(normalized_quest, normalized_objective)
+	return _set_objective_progress(normalized_quest, normalized_objective, int(objective.get("target_amount", 0)), false, data)
+
+
 func complete_quest(quest_id: String, data: Dictionary = {}) -> Dictionary:
 	var normalized := quest_id.strip_edges()
 	var result := QuestResultData.make(true, normalized)
 	if not _validate_quest_request(result, normalized, data):
 		return result
+	var quest: Dictionary = _quests_by_id[normalized]
+	var status := String(quest.get("status", ""))
 	_populate_result_from_quest(result, normalized)
-	QuestResultData.add_error(result, "Quest completion requires completed objectives: %s" % normalized)
+	if status == QuestConstantsData.STATUS_COMPLETED:
+		result["rewards"] = _rewards_for_quest(normalized)
+		return result
+	if status == QuestConstantsData.STATUS_FAILED:
+		QuestResultData.add_error(result, "Quest is terminal: %s" % normalized)
+		return result
+	if status != QuestConstantsData.STATUS_ACTIVE:
+		QuestResultData.add_error(result, "Quest must be active: %s" % normalized)
+		return result
+	if not _is_completion_policy_satisfied(normalized):
+		QuestResultData.add_error(result, "Quest completion policy is not satisfied: %s" % normalized)
+		return result
+	_complete_quest_runtime(normalized, result, data)
 	return result
 
 
@@ -250,6 +294,149 @@ func _validate_quest_request(result: Dictionary, quest_id: String, data: Diction
 	return bool(result.get("ok", false))
 
 
+func _validate_objective_mutation(result: Dictionary, quest_id: String, objective_id: String, data: Dictionary) -> bool:
+	if not _validate_quest_request(result, quest_id, data):
+		return false
+	if objective_id.is_empty():
+		QuestResultData.add_error(result, "objective_id must be non-empty")
+		return false
+
+	var quest: Dictionary = _quests_by_id[quest_id]
+	var quest_status := String(quest.get("status", ""))
+	_populate_result_from_quest(result, quest_id)
+	if _is_terminal_status(quest_status):
+		QuestResultData.add_error(result, "Quest is terminal: %s" % quest_id)
+		return false
+	if quest_status != QuestConstantsData.STATUS_ACTIVE:
+		QuestResultData.add_error(result, "Quest must be active: %s" % quest_id)
+		return false
+
+	var objective := _get_objective_runtime(quest_id, objective_id)
+	if objective.is_empty():
+		QuestResultData.add_error(result, "Unknown objective_id: %s" % objective_id)
+		return false
+	var objective_status := String(objective.get("status", ""))
+	_populate_result_from_objective(result, quest_id, objective_id)
+	if objective_status == QuestConstantsData.OBJECTIVE_COMPLETED:
+		QuestResultData.add_error(result, "Objective is completed: %s" % objective_id)
+		return false
+	if objective_status != QuestConstantsData.OBJECTIVE_ACTIVE:
+		QuestResultData.add_error(result, "Objective must be active: %s" % objective_id)
+		return false
+	return bool(result.get("ok", false))
+
+
+func _set_objective_progress(quest_id: String, objective_id: String, amount: int, is_delta: bool, data: Dictionary) -> Dictionary:
+	var result := QuestResultData.make(true, quest_id, objective_id)
+	if not _validate_objective_mutation(result, quest_id, objective_id, data):
+		return result
+
+	var objective := _get_objective_runtime(quest_id, objective_id)
+	var previous_progress := int(objective.get("progress", 0))
+	var target_amount := int(objective.get("target_amount", 0))
+	var requested_progress := previous_progress + amount if is_delta else amount
+	var applied_progress := clampi(requested_progress, 0, target_amount)
+	result["previous_progress"] = previous_progress
+	result["progress"] = applied_progress
+	result["target_amount"] = target_amount
+	if requested_progress != applied_progress:
+		result["clamped"] = true
+		QuestResultData.add_warning(result, "progress was clamped from %d to %d" % [requested_progress, applied_progress])
+
+	_merge_runtime_data(objective, data)
+	if applied_progress != previous_progress:
+		objective["progress"] = applied_progress
+		_populate_result_from_objective(result, quest_id, objective_id)
+		_emit_objective_progress_changed(quest_id, objective_id, previous_progress, result)
+
+	if applied_progress >= target_amount:
+		_complete_objective_runtime(quest_id, objective_id, result)
+		_maybe_auto_complete_quest(quest_id, result)
+	else:
+		_populate_result_from_objective(result, quest_id, objective_id)
+	return result
+
+
+func _complete_objective_runtime(quest_id: String, objective_id: String, result: Dictionary) -> void:
+	var objective := _get_objective_runtime(quest_id, objective_id)
+	if objective.is_empty():
+		return
+	if String(objective.get("status", "")) == QuestConstantsData.OBJECTIVE_COMPLETED:
+		return
+	objective["status"] = QuestConstantsData.OBJECTIVE_COMPLETED
+	objective["progress"] = int(objective.get("target_amount", 0))
+	_populate_result_from_objective(result, quest_id, objective_id)
+	var event := _make_objective_event(QuestConstantsData.EVENT_OBJECTIVE_COMPLETED, quest_id, objective_id, int(objective.get("progress", 0)))
+	QuestResultData.add_event(result, event)
+	objective_completed.emit(quest_id, objective_id, result)
+	quests_changed.emit(event)
+
+
+func _is_completion_policy_satisfied(quest_id: String) -> bool:
+	if database == null or not database.has_method("get_quest") or not _quests_by_id.has(quest_id):
+		return false
+	var definition: Resource = database.call("get_quest", quest_id)
+	if definition == null:
+		return false
+	var required_count := 0
+	var completed_count := 0
+	for objective_definition in definition.objectives:
+		if bool(objective_definition.optional):
+			continue
+		required_count += 1
+		var objective_id := String(objective_definition.objective_id)
+		var objective := _get_objective_runtime(quest_id, objective_id)
+		if String(objective.get("status", "")) == QuestConstantsData.OBJECTIVE_COMPLETED:
+			completed_count += 1
+	if required_count == 0:
+		return false
+	var policy := String(definition.completion_policy)
+	if policy == QuestConstantsData.POLICY_ALL:
+		return completed_count == required_count
+	if policy == QuestConstantsData.POLICY_ANY:
+		return completed_count > 0
+	return false
+
+
+func _maybe_auto_complete_quest(quest_id: String, result: Dictionary) -> void:
+	if database == null or not database.has_method("get_quest"):
+		return
+	var definition: Resource = database.call("get_quest", quest_id)
+	if definition == null or not bool(definition.auto_complete):
+		return
+	if _is_completion_policy_satisfied(quest_id):
+		_complete_quest_runtime(quest_id, result, {})
+
+
+func _complete_quest_runtime(quest_id: String, result: Dictionary, data: Dictionary) -> void:
+	if not _quests_by_id.has(quest_id):
+		return
+	var quest: Dictionary = _quests_by_id[quest_id]
+	var previous_status := String(quest.get("status", ""))
+	if previous_status == QuestConstantsData.STATUS_COMPLETED:
+		result["rewards"] = _rewards_for_quest(quest_id)
+		_populate_result_from_quest(result, quest_id)
+		return
+
+	_merge_runtime_data(quest, data)
+	var definition: Resource = database.call("get_quest", quest_id)
+	for objective_definition in definition.objectives:
+		if bool(objective_definition.optional):
+			continue
+		var objective_id := String(objective_definition.objective_id)
+		var objective := _get_objective_runtime(quest_id, objective_id)
+		if objective.is_empty():
+			continue
+		if String(objective.get("status", "")) != QuestConstantsData.OBJECTIVE_COMPLETED:
+			objective["progress"] = int(objective.get("target_amount", 0))
+			objective["status"] = QuestConstantsData.OBJECTIVE_COMPLETED
+	quest["status"] = QuestConstantsData.STATUS_COMPLETED
+	result["previous_status"] = previous_status
+	result["rewards"] = _rewards_for_quest(quest_id)
+	_populate_result_from_quest(result, quest_id)
+	_emit_quest_status_change(quest_id, QuestConstantsData.EVENT_QUEST_COMPLETED, previous_status, result)
+
+
 func _validate_database(result: Dictionary) -> bool:
 	if database == null:
 		QuestResultData.add_error(result, "database must be assigned")
@@ -294,6 +481,27 @@ func _populate_result_from_quest(result: Dictionary, quest_id: String) -> void:
 	result["status"] = String(quest.get("status", ""))
 	result["quest"] = quest.duplicate(true)
 	result["data"] = (quest.get("data", {}) as Dictionary).duplicate(true)
+
+
+func _populate_result_from_objective(result: Dictionary, quest_id: String, objective_id: String) -> void:
+	_populate_result_from_quest(result, quest_id)
+	var objective := _get_objective_runtime(quest_id, objective_id)
+	if objective.is_empty():
+		return
+	result["objective_id"] = objective_id
+	result["progress"] = int(objective.get("progress", 0))
+	result["target_amount"] = int(objective.get("target_amount", 0))
+	result["data"] = (objective.get("data", {}) as Dictionary).duplicate(true)
+
+
+func _get_objective_runtime(quest_id: String, objective_id: String) -> Dictionary:
+	if not _quests_by_id.has(quest_id):
+		return {}
+	var quest: Dictionary = _quests_by_id[quest_id]
+	for objective in (quest.get("objectives", []) as Array):
+		if String(objective.get("objective_id", "")) == objective_id:
+			return objective
+	return {}
 
 
 func _merge_runtime_data(quest: Dictionary, data: Dictionary) -> void:
@@ -344,6 +552,14 @@ func _emit_quest_status_change(quest_id: String, event_type: String, previous_st
 	quests_changed.emit(status_event)
 
 
+func _emit_objective_progress_changed(quest_id: String, objective_id: String, previous_progress: int, result: Dictionary) -> void:
+	var progress := int(result.get("progress", 0))
+	var event := _make_objective_event(QuestConstantsData.EVENT_OBJECTIVE_PROGRESS_CHANGED, quest_id, objective_id, progress, previous_progress)
+	QuestResultData.add_event(result, event)
+	objective_progress_changed.emit(quest_id, objective_id, progress, result)
+	quests_changed.emit(event)
+
+
 func _make_quest_event(event_type: String, quest_id: String, status: String, previous_status: String = "") -> Dictionary:
 	return {
 		"ok": true,
@@ -355,6 +571,29 @@ func _make_quest_event(event_type: String, quest_id: String, status: String, pre
 		"warnings": [],
 		"errors": [],
 	}
+
+
+func _make_objective_event(event_type: String, quest_id: String, objective_id: String, progress: int, previous_progress: int = 0) -> Dictionary:
+	return {
+		"ok": true,
+		"type": event_type,
+		"quest_id": quest_id,
+		"objective_id": objective_id,
+		"status": String((_quests_by_id.get(quest_id, {}) as Dictionary).get("status", "")),
+		"progress": progress,
+		"previous_progress": previous_progress,
+		"warnings": [],
+		"errors": [],
+	}
+
+
+func _rewards_for_quest(quest_id: String) -> Dictionary:
+	if database == null or not database.has_method("get_quest"):
+		return {}
+	var definition: Resource = database.call("get_quest", quest_id)
+	if definition == null:
+		return {}
+	return (definition.rewards as Dictionary).duplicate(true)
 
 
 func _quest_to_state(quest: Dictionary) -> Dictionary:

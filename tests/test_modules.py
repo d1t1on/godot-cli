@@ -835,6 +835,9 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn("func initialize_quests(reset: bool = false) -> Dictionary", quest_log)
         self.assertIn("func has_quest(quest_id: String) -> bool", quest_log)
         self.assertIn("func start_quest(quest_id: String, data: Dictionary = {}) -> Dictionary", quest_log)
+        self.assertIn("func advance_objective(quest_id: String, objective_id: String, amount: int = 1, data: Dictionary = {}) -> Dictionary", quest_log)
+        self.assertIn("func set_objective_progress(quest_id: String, objective_id: String, amount: int, data: Dictionary = {}) -> Dictionary", quest_log)
+        self.assertIn("func complete_objective(quest_id: String, objective_id: String, data: Dictionary = {}) -> Dictionary", quest_log)
         self.assertIn("func complete_quest(quest_id: String, data: Dictionary = {}) -> Dictionary", quest_log)
         self.assertIn("func fail_quest(quest_id: String, data: Dictionary = {}) -> Dictionary", quest_log)
         self.assertIn("func set_quest_active(quest_id: String, active: bool) -> Dictionary", quest_log)
@@ -848,6 +851,8 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn("func load_state(data: Dictionary) -> void", quest_log)
         self.assertIn("_quests_by_id", quest_log)
         self.assertIn("_quest_ids", quest_log)
+        self.assertIn("_is_completion_policy_satisfied", quest_log)
+        self.assertIn("_maybe_auto_complete_quest", quest_log)
 
     def test_abilities_source_defines_container_api(self) -> None:
         source_root = default_module_roots()[0]
@@ -1505,6 +1510,26 @@ class QuestsModuleGodotTests(unittest.TestCase):
 
             with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
                 result = godot.locator("#QuestsLogStatusProbe").call("run_probe")
+
+        self.assertTrue(result["ok"], result)
+
+    def test_quest_objective_progression_runs_in_godot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Quests Progression Probe")
+            add_module(project, "quests")
+            _write_quests_progression_probe(project)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/quests_progression_probe.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#QuestsProgressionProbe").call("run_probe")
 
         self.assertTrue(result["ok"], result)
 
@@ -3341,6 +3366,218 @@ def _write_quests_log_status_probe(project: Path) -> None:
             [ext_resource type="Script" path="res://scripts/quests_log_status_probe.gd" id="1_probe_script"]
 
             [node name="QuestsLogStatusProbe" type="Node"]
+            script = ExtResource("1_probe_script")
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_quests_progression_probe(project: Path) -> None:
+    (project / "scripts" / "quests_progression_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            const ObjectiveDefinitionData := preload("res://addons/quests/objective_definition.gd")
+            const QuestDefinitionData := preload("res://addons/quests/quest_definition.gd")
+            const QuestDatabaseData := preload("res://addons/quests/quest_database.gd")
+            const QuestLogData := preload("res://addons/quests/quest_log.gd")
+
+
+            func run_probe() -> Dictionary:
+                var errors: Array[String] = []
+                var log := QuestLogData.new()
+                log.initialize_on_ready = false
+                log.database = _make_database()
+                add_child(log)
+                _assert_ok(log.initialize_quests(), "initialize_quests", errors)
+
+                _assert_ok(log.start_quest("repair_beacon"), "start repair_beacon", errors)
+                var collect_two: Dictionary = log.advance_objective("repair_beacon", "collect_parts", 2)
+                _assert_ok(collect_two, "collect two parts", errors)
+                _assert_int(2, int(collect_two.get("progress", -1)), "collect progress result", errors)
+                _assert_int(0, int(collect_two.get("previous_progress", -1)), "collect previous progress result", errors)
+                _assert_int(3, int(collect_two.get("target_amount", -1)), "collect target result", errors)
+                _assert_bool(not bool(collect_two.get("clamped", false)), "collect two should not clamp", errors)
+                _assert_objective_progress(log.get_quest("repair_beacon"), "collect_parts", 2, "collect progress after first advance", errors)
+                _assert_objective_status(log.get_quest("repair_beacon"), "collect_parts", "active", "collect status after first advance", errors)
+
+                var collect_clamped: Dictionary = log.advance_objective("repair_beacon", "collect_parts", 5)
+                _assert_ok(collect_clamped, "collect clamped parts", errors)
+                _assert_bool(bool(collect_clamped.get("clamped", false)), "collect should clamp", errors)
+                _assert_int(3, int(collect_clamped.get("progress", -1)), "collect clamped progress result", errors)
+                _assert_objective_progress(log.get_quest("repair_beacon"), "collect_parts", 3, "collect progress after clamp", errors)
+                _assert_objective_status(log.get_quest("repair_beacon"), "collect_parts", "completed", "collect status after clamp", errors)
+                _assert_string("active", String(log.get_quest("repair_beacon").get("status", "")), "repair remains active after one required objective", errors)
+
+                var before_completed_progress: Dictionary = log.get_quest("repair_beacon")
+                var completed_progress: Dictionary = log.advance_objective("repair_beacon", "collect_parts", 1)
+                _assert_error(completed_progress, "completed", "progress completed objective", errors)
+                _assert_quest_equal(before_completed_progress, log.get_quest("repair_beacon"), "completed objective progress should not mutate", errors)
+
+                _assert_ok(log.complete_objective("repair_beacon", "find_note"), "complete optional note", errors)
+                _assert_string("active", String(log.get_quest("repair_beacon").get("status", "")), "optional objective should not complete all policy quest", errors)
+
+                var scan_complete: Dictionary = log.complete_objective("repair_beacon", "scan_beacon")
+                _assert_ok(scan_complete, "complete scan objective", errors)
+                _assert_string("completed", String(log.get_quest("repair_beacon").get("status", "")), "repair completes after all required objectives", errors)
+                _assert_int(50, int(scan_complete.get("rewards", {}).get("coins", 0)), "repair reward coins", errors)
+                _assert_has_event(scan_complete.get("events", []), "quest_completed", "repair_beacon", "repair completion event", errors)
+
+                _assert_ok(log.start_quest("choose_route"), "start choose_route", errors)
+                _assert_ok(log.complete_objective("choose_route", "read_map"), "complete optional any objective", errors)
+                _assert_string("active", String(log.get_quest("choose_route").get("status", "")), "optional objective should not satisfy any policy", errors)
+                var bridge_complete: Dictionary = log.complete_objective("choose_route", "use_bridge")
+                _assert_ok(bridge_complete, "complete any required objective", errors)
+                _assert_string("completed", String(log.get_quest("choose_route").get("status", "")), "any policy completes after one required objective", errors)
+
+                _assert_ok(log.start_quest("manual_repair"), "start manual_repair", errors)
+                _assert_ok(log.complete_objective("manual_repair", "calibrate"), "complete manual objective", errors)
+                _assert_string("active", String(log.get_quest("manual_repair").get("status", "")), "manual quest should not auto-complete", errors)
+                var manual_complete: Dictionary = log.complete_quest("manual_repair")
+                _assert_ok(manual_complete, "complete manual quest", errors)
+                _assert_string("completed", String(log.get_quest("manual_repair").get("status", "")), "manual quest completed explicitly", errors)
+
+                _assert_ok(log.start_quest("bad_inputs"), "start bad_inputs", errors)
+                var zero_advance: Dictionary = log.advance_objective("bad_inputs", "counter", 0)
+                _assert_error(zero_advance, "positive", "zero advance", errors)
+                var negative_set: Dictionary = log.set_objective_progress("bad_inputs", "counter", -1)
+                _assert_error(negative_set, "zero or greater", "negative set progress", errors)
+                var before_bad_data: Dictionary = log.get_quest("bad_inputs")
+                var bad_data: Dictionary = log.advance_objective("bad_inputs", "counter", 1, {"callable": Callable(self, "_noop")})
+                _assert_error(bad_data, "JSON-compatible", "non-json progression data", errors)
+                _assert_quest_equal(before_bad_data, log.get_quest("bad_inputs"), "non-json data should not mutate", errors)
+
+                return {"ok": errors.is_empty(), "errors": errors}
+
+
+            func _make_database() -> Resource:
+                var collect := _make_objective(&"collect_parts", 3)
+                var scan := _make_objective(&"scan_beacon", 1)
+                var note := _make_objective(&"find_note", 1)
+                note.optional = true
+                var repair := QuestDefinitionData.new()
+                repair.quest_id = &"repair_beacon"
+                repair.objectives = [collect, scan, note]
+                repair.completion_policy = "all"
+                repair.rewards = {"coins": 50}
+
+                var bridge := _make_objective(&"use_bridge", 1)
+                var tunnel := _make_objective(&"use_tunnel", 1)
+                var read_map := _make_objective(&"read_map", 1)
+                read_map.optional = true
+                var choose_route := QuestDefinitionData.new()
+                choose_route.quest_id = &"choose_route"
+                choose_route.objectives = [bridge, tunnel, read_map]
+                choose_route.completion_policy = "any"
+
+                var calibrate := _make_objective(&"calibrate", 1)
+                var manual := QuestDefinitionData.new()
+                manual.quest_id = &"manual_repair"
+                manual.objectives = [calibrate]
+                manual.auto_complete = false
+
+                var counter := _make_objective(&"counter", 2)
+                var bad_inputs := QuestDefinitionData.new()
+                bad_inputs.quest_id = &"bad_inputs"
+                bad_inputs.objectives = [counter]
+
+                var database := QuestDatabaseData.new()
+                database.quests.append(repair)
+                database.quests.append(choose_route)
+                database.quests.append(manual)
+                database.quests.append(bad_inputs)
+                return database
+
+
+            func _make_objective(objective_id: StringName, target_amount: int) -> Resource:
+                var objective := ObjectiveDefinitionData.new()
+                objective.objective_id = objective_id
+                objective.display_name = String(objective_id)
+                objective.target_amount = target_amount
+                return objective
+
+
+            func _assert_ok(result: Dictionary, label: String, errors: Array[String]) -> void:
+                if not bool(result.get("ok", false)):
+                    errors.append("%s failed: %s" % [label, str(result)])
+
+
+            func _assert_error(result: Dictionary, needle: String, label: String, errors: Array[String]) -> void:
+                if bool(result.get("ok", true)):
+                    errors.append("%s should fail" % label)
+                    return
+                for message in result.get("errors", []):
+                    if String(message).contains(needle):
+                        return
+                errors.append("%s missing %s in %s" % [label, needle, str(result)])
+
+
+            func _assert_has_event(events: Array, event_type: String, quest_id: String, label: String, errors: Array[String]) -> void:
+                for event in events:
+                    if String(event.get("type", "")) == event_type and String(event.get("quest_id", "")) == quest_id:
+                        return
+                errors.append("%s missing %s for %s in %s" % [label, event_type, quest_id, str(events)])
+
+
+            func _assert_objective_status(quest: Dictionary, objective_id: String, expected_status: String, label: String, errors: Array[String]) -> void:
+                var objective := _get_objective(quest, objective_id)
+                if objective.is_empty():
+                    errors.append("%s missing objective %s in %s" % [label, objective_id, str(quest)])
+                    return
+                _assert_string(expected_status, String(objective.get("status", "")), label, errors)
+
+
+            func _assert_objective_progress(quest: Dictionary, objective_id: String, expected_progress: int, label: String, errors: Array[String]) -> void:
+                var objective := _get_objective(quest, objective_id)
+                if objective.is_empty():
+                    errors.append("%s missing objective %s in %s" % [label, objective_id, str(quest)])
+                    return
+                _assert_int(expected_progress, int(objective.get("progress", -1)), label, errors)
+
+
+            func _assert_quest_equal(expected: Dictionary, actual: Dictionary, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %s, got %s" % [label, str(expected), str(actual)])
+
+
+            func _get_objective(quest: Dictionary, objective_id: String) -> Dictionary:
+                for objective in quest.get("objectives", []):
+                    if String(objective.get("objective_id", "")) == objective_id:
+                        return objective
+                return {}
+
+
+            func _assert_bool(value: bool, message: String, errors: Array[String]) -> void:
+                if not value:
+                    errors.append(message)
+
+
+            func _assert_string(expected: String, actual: String, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %s, got %s" % [label, expected, actual])
+
+
+            func _assert_int(expected: int, actual: int, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %d, got %d" % [label, expected, actual])
+
+
+            func _noop() -> void:
+                pass
+            """
+        ),
+        encoding="utf-8",
+    )
+    (project / "scenes" / "quests_progression_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://scripts/quests_progression_probe.gd" id="1_probe_script"]
+
+            [node name="QuestsProgressionProbe" type="Node"]
             script = ExtResource("1_probe_script")
             """
         ),
