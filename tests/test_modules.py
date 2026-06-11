@@ -751,6 +751,72 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn("static func add_error", result)
         self.assertIn("const SCHEMA_VERSION: int = 1", constants)
 
+    def test_quests_source_defines_resource_helpers(self) -> None:
+        source_root = default_module_roots()[0]
+        quests_root = source_root / "quests" / "addons" / "quests"
+        objective = (quests_root / "objective_definition.gd").read_text(encoding="utf-8")
+        definition = (quests_root / "quest_definition.gd").read_text(encoding="utf-8")
+        database = (quests_root / "quest_database.gd").read_text(encoding="utf-8")
+        result = (quests_root / "quest_result.gd").read_text(encoding="utf-8")
+        constants = (quests_root / "quest_constants.gd").read_text(encoding="utf-8")
+
+        self.assertIn("class_name ObjectiveDefinition", objective)
+        self.assertIn("@export var objective_id: StringName", objective)
+        self.assertIn("@export var display_name: String", objective)
+        self.assertIn("@export_multiline var description: String", objective)
+        self.assertIn("@export var tags: Array[StringName] = []", objective)
+        self.assertIn("@export_range(1, 999999, 1) var target_amount: int = 1", objective)
+        self.assertIn("@export var optional: bool = false", objective)
+        self.assertIn("@export var hidden: bool = false", objective)
+        self.assertIn("@export var default_data: Dictionary = {}", objective)
+        self.assertIn("class_name QuestDefinition", definition)
+        self.assertIn("@export var quest_id: StringName", definition)
+        self.assertIn("@export var display_name: String", definition)
+        self.assertIn("@export_multiline var description: String", definition)
+        self.assertIn("@export var tags: Array[StringName] = []", definition)
+        self.assertIn("@export var objectives: Array[Resource] = []", definition)
+        self.assertIn('@export_enum("all", "any") var completion_policy: String = "all"', definition)
+        self.assertIn("@export var auto_complete: bool = true", definition)
+        self.assertIn("@export var start_active: bool = false", definition)
+        self.assertIn("@export var rewards: Dictionary = {}", definition)
+        self.assertIn("@export var default_data: Dictionary = {}", definition)
+        self.assertIn("class_name QuestDatabase", database)
+        self.assertIn('QuestDefinitionData := preload("res://addons/quests/quest_definition.gd")', database)
+        self.assertIn('ObjectiveDefinitionData := preload("res://addons/quests/objective_definition.gd")', database)
+        self.assertIn('QuestResultData := preload("res://addons/quests/quest_result.gd")', database)
+        self.assertIn("@export var quests: Array[Resource] = []", database)
+        self.assertIn("func get_quest(quest_id: String) -> Resource", database)
+        self.assertIn("func has_quest(quest_id: String) -> bool", database)
+        self.assertIn("func get_quest_ids() -> Array[String]", database)
+        self.assertIn("func get_objective(quest_id: String, objective_id: String) -> Resource", database)
+        self.assertIn("func validate() -> Dictionary", database)
+        self.assertIn("quests[%d] is null", database)
+        self.assertIn("must be a QuestDefinition", database)
+        self.assertIn("quest_id must be non-empty", database)
+        self.assertIn("Duplicate quest_id", database)
+        self.assertIn("completion_policy must be one of", database)
+        self.assertIn("Duplicate objective_id", database)
+        self.assertIn("target_amount must be 1 or greater", database)
+        self.assertIn("_is_json_compatible", database)
+        self.assertIn("class_name QuestResult", result)
+        self.assertIn('"quest_id": quest_id', result)
+        self.assertIn('"objective_id": objective_id', result)
+        self.assertIn('"status": ""', result)
+        self.assertIn('"previous_status": ""', result)
+        self.assertIn('"progress": 0', result)
+        self.assertIn('"previous_progress": 0', result)
+        self.assertIn('"target_amount": 0', result)
+        self.assertIn('"clamped": false', result)
+        self.assertIn('"quest": {}', result)
+        self.assertIn('"rewards": {}', result)
+        self.assertIn('"data": {}', result)
+        self.assertIn("static func add_event", result)
+        self.assertIn("static func add_warning", result)
+        self.assertIn("static func add_error", result)
+        self.assertIn("const SCHEMA_VERSION: int = 1", constants)
+        self.assertIn('const POLICY_ALL: String = "all"', constants)
+        self.assertIn('const POLICY_ANY: String = "any"', constants)
+
     def test_abilities_source_defines_container_api(self) -> None:
         source_root = default_module_roots()[0]
         container = (source_root / "abilities" / "addons" / "abilities" / "ability_container.gd").read_text(
@@ -1364,6 +1430,29 @@ class AbilitiesModuleGodotTests(unittest.TestCase):
 
             with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
                 result = godot.locator("#AbilitiesSaveLoadProbe").call("run_probe")
+
+        self.assertTrue(result["ok"], result)
+
+
+@unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
+class QuestsModuleGodotTests(unittest.TestCase):
+    def test_quest_database_validation_runs_in_godot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Quests Database Probe")
+            add_module(project, "quests")
+            _write_quests_database_probe(project)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/quests_database_probe.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#QuestsDatabaseProbe").call("run_probe")
 
         self.assertTrue(result["ok"], result)
 
@@ -2776,6 +2865,149 @@ def _write_abilities_container_probe(project: Path) -> None:
             [ext_resource type="Script" path="res://scripts/abilities_container_probe.gd" id="1_probe_script"]
 
             [node name="AbilitiesContainerProbe" type="Node"]
+            script = ExtResource("1_probe_script")
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_quests_database_probe(project: Path) -> None:
+    (project / "scripts" / "quests_database_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            const ObjectiveDefinitionData := preload("res://addons/quests/objective_definition.gd")
+            const QuestDefinitionData := preload("res://addons/quests/quest_definition.gd")
+            const QuestDatabaseData := preload("res://addons/quests/quest_database.gd")
+
+
+            func run_probe() -> Dictionary:
+                var errors: Array[String] = []
+                var collect := ObjectiveDefinitionData.new()
+                collect.objective_id = &"collect"
+                collect.display_name = "Collect"
+                collect.target_amount = 3
+                collect.default_data = {"item_id": "coin"}
+
+                var return_home := ObjectiveDefinitionData.new()
+                return_home.objective_id = &"return_home"
+                return_home.display_name = "Return Home"
+                return_home.target_amount = 1
+
+                var quest := QuestDefinitionData.new()
+                quest.quest_id = &"first_quest"
+                quest.display_name = "First Quest"
+                quest.objectives = [collect, return_home]
+                quest.completion_policy = "all"
+                quest.rewards = {"xp": 10, "items": ["coin"]}
+                quest.default_data = {"giver": "elder"}
+
+                var valid_database := QuestDatabaseData.new()
+                valid_database.quests.append(quest)
+                _assert_ok(valid_database.validate(), "valid database", errors)
+                _assert_bool(valid_database.has_quest("first_quest"), "has quest", errors)
+                _assert_string("first_quest", String(valid_database.get_quest("first_quest").quest_id), "quest lookup", errors)
+                _assert_string("collect", String(valid_database.get_objective("first_quest", "collect").objective_id), "objective lookup", errors)
+                _assert_bool(valid_database.get_objective("first_quest", "missing") == null, "missing objective returns null", errors)
+                _assert_array(["first_quest"], valid_database.get_quest_ids(), "quest ids", errors)
+
+                var invalid_resource_database := QuestDatabaseData.new()
+                invalid_resource_database.quests.append(Resource.new())
+                _assert_error(invalid_resource_database.validate(), "must be a QuestDefinition", "invalid quest resource", errors)
+
+                var empty_id := QuestDefinitionData.new()
+                empty_id.quest_id = &""
+                var empty_database := QuestDatabaseData.new()
+                empty_database.quests.append(empty_id)
+                _assert_error(empty_database.validate(), "quest_id must be non-empty", "empty quest_id", errors)
+
+                var duplicate := QuestDefinitionData.new()
+                duplicate.quest_id = &"first_quest"
+                var duplicate_database := QuestDatabaseData.new()
+                duplicate_database.quests.append(quest)
+                duplicate_database.quests.append(duplicate)
+                _assert_error(duplicate_database.validate(), "Duplicate quest_id", "duplicate quest_id", errors)
+
+                var bad_policy := QuestDefinitionData.new()
+                bad_policy.quest_id = &"bad_policy"
+                bad_policy.completion_policy = "none"
+                var bad_policy_database := QuestDatabaseData.new()
+                bad_policy_database.quests.append(bad_policy)
+                _assert_error(bad_policy_database.validate(), "completion_policy must be one of", "bad completion policy", errors)
+
+                var duplicate_objective_a := ObjectiveDefinitionData.new()
+                duplicate_objective_a.objective_id = &"same"
+                var duplicate_objective_b := ObjectiveDefinitionData.new()
+                duplicate_objective_b.objective_id = &"same"
+                var duplicate_objectives := QuestDefinitionData.new()
+                duplicate_objectives.quest_id = &"duplicate_objectives"
+                duplicate_objectives.objectives = [duplicate_objective_a, duplicate_objective_b]
+                var duplicate_objectives_database := QuestDatabaseData.new()
+                duplicate_objectives_database.quests.append(duplicate_objectives)
+                _assert_error(duplicate_objectives_database.validate(), "Duplicate objective_id", "duplicate objective_id", errors)
+
+                var bad_target_objective := ObjectiveDefinitionData.new()
+                bad_target_objective.objective_id = &"bad_target"
+                bad_target_objective.target_amount = 0
+                var bad_target := QuestDefinitionData.new()
+                bad_target.quest_id = &"bad_target"
+                bad_target.objectives = [bad_target_objective]
+                var bad_target_database := QuestDatabaseData.new()
+                bad_target_database.quests.append(bad_target)
+                _assert_error(bad_target_database.validate(), "target_amount must be 1 or greater", "bad target_amount", errors)
+
+                var bad_rewards := QuestDefinitionData.new()
+                bad_rewards.quest_id = &"bad_rewards"
+                bad_rewards.rewards = {"node": self}
+                var bad_rewards_database := QuestDatabaseData.new()
+                bad_rewards_database.quests.append(bad_rewards)
+                _assert_error(bad_rewards_database.validate(), "rewards must be JSON-compatible", "bad rewards", errors)
+
+                return {"ok": errors.is_empty(), "errors": errors}
+
+
+            func _assert_ok(result: Dictionary, label: String, errors: Array[String]) -> void:
+                if not bool(result.get("ok", false)):
+                    errors.append("%s failed: %s" % [label, str(result)])
+
+
+            func _assert_error(result: Dictionary, needle: String, label: String, errors: Array[String]) -> void:
+                if bool(result.get("ok", true)):
+                    errors.append("%s should fail" % label)
+                    return
+                for message in result.get("errors", []):
+                    if String(message).contains(needle):
+                        return
+                errors.append("%s missing %s in %s" % [label, needle, str(result)])
+
+
+            func _assert_bool(value: bool, message: String, errors: Array[String]) -> void:
+                if not value:
+                    errors.append(message)
+
+
+            func _assert_string(expected: String, actual: String, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %s, got %s" % [label, expected, actual])
+
+
+            func _assert_array(expected: Array, actual: Array, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %s, got %s" % [label, str(expected), str(actual)])
+            """
+        ),
+        encoding="utf-8",
+    )
+    (project / "scenes" / "quests_database_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://scripts/quests_database_probe.gd" id="1_probe_script"]
+
+            [node name="QuestsDatabaseProbe" type="Node"]
             script = ExtResource("1_probe_script")
             """
         ),
