@@ -82,6 +82,13 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertEqual(stats["autoloads"], [])
         self.assertIn("demo", stats)
 
+    def test_repository_quests_module_is_discoverable(self) -> None:
+        modules = list_modules()
+        quests = next(module for module in modules if module["name"] == "quests")
+        self.assertEqual(quests["version"], "0.1.0")
+        self.assertEqual(quests["godot_version"], ">=4.6")
+        self.assertEqual(quests["autoloads"], [])
+
     def test_add_inventory_module_copies_files_without_autoload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -161,6 +168,35 @@ class ModuleInstallerUnitTests(unittest.TestCase):
             copied_targets = {entry["target"] for entry in report["copied"]}
             self.assertTrue(
                 {f"res://addons/abilities/{script_name}" for script_name in expected_scripts}.issubset(copied_targets),
+                copied_targets,
+            )
+
+    def test_add_quests_module_copies_files_without_autoload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = _write_project(root / "project")
+
+            report = add_module(project, "quests")
+
+            self.assertTrue(report["ok"], report)
+            self.assertFalse(report["demo"])
+            self.assertEqual(report["module"], "quests")
+            self.assertEqual(report["autoloads"], [])
+            expected_scripts = {
+                "quest_constants.gd",
+                "quest_result.gd",
+                "objective_definition.gd",
+                "quest_definition.gd",
+                "quest_database.gd",
+                "quest_log.gd",
+            }
+            for script_name in expected_scripts:
+                self.assertTrue((project / "addons" / "quests" / script_name).exists(), script_name)
+            project_text = (project / "project.godot").read_text(encoding="utf-8")
+            self.assertNotIn("QuestService", project_text)
+            copied_targets = {entry["target"] for entry in report["copied"]}
+            self.assertTrue(
+                {f"res://addons/quests/{script_name}" for script_name in expected_scripts}.issubset(copied_targets),
                 copied_targets,
             )
 
