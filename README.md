@@ -152,6 +152,8 @@ godot-playwright module add /tmp/agent-game stats
 godot-playwright module add /tmp/agent-game stats --demo
 godot-playwright module add /tmp/agent-game abilities
 godot-playwright module add /tmp/agent-game abilities --demo
+godot-playwright module add /tmp/agent-game quests
+godot-playwright module add /tmp/agent-game quests --demo
 ```
 
 The first gameplay module is `save_load`, a JSON slot save/load service. The
@@ -180,6 +182,8 @@ manage active effects with optional `save_load` persistence through stable
 The `stats` module adds a reusable `StatContainer` node backed by `StatDefinition` and `StatDatabase` Resources. It supports base/current values, pool stats such as health or stamina, min/max clamping, change/depletion/fill signals, JSON-compatible `get_state()` / `apply_state(data)`, and optional persistence through `save_load` when a container has a stable `save_id`.
 
 The `abilities` module adds a reusable `AbilityContainer` node backed by `AbilityDefinition` and `AbilityDatabase` Resources. It supports instant action requests, cooldowns, charges, enabled state, structured activation results, JSON-compatible `get_state()` / `apply_state(data)`, and optional persistence through `save_load` when a container has a stable `save_id`. Costs are reported in activation results but are not automatically spent.
+
+The `quests` module adds a reusable `QuestLog` node backed by `QuestDefinition`, `ObjectiveDefinition`, and `QuestDatabase` Resources. It supports explicit quest start/fail/complete flow, objective progress, `all`/`any` completion policies, optional objectives, structured mutation results, JSON-compatible `get_state()` / `apply_state(data)`, and optional persistence through `save_load` when a log has a stable `save_id`. Rewards are reported in completion results but are not automatically granted.
 
 Probe runtime startup for script errors and warning/error log diagnostics:
 

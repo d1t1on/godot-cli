@@ -437,6 +437,12 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn('"bundled_gameplay_modules/abilities/demo/scripts/*"', pyproject)
         self.assertIn('"bundled_gameplay_modules/abilities/demo/resources/*"', pyproject)
         self.assertIn('"bundled_gameplay_modules/abilities/tests/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/quests/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/quests/addons/quests/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/quests/demo/scenes/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/quests/demo/scripts/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/quests/demo/resources/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/quests/tests/*"', pyproject)
 
     def test_source_and_packaged_save_load_trees_are_identical(self) -> None:
         source_root, bundled_root = default_module_roots()
@@ -638,6 +644,8 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn("godot-playwright module add /tmp/agent-game stats --demo", readme)
         self.assertIn("godot-playwright module add /tmp/agent-game abilities", readme)
         self.assertIn("godot-playwright module add /tmp/agent-game abilities --demo", readme)
+        self.assertIn("godot-playwright module add /tmp/agent-game quests", readme)
+        self.assertIn("godot-playwright module add /tmp/agent-game quests --demo", readme)
 
     def test_effects_docs_exist_for_humans_and_agents(self) -> None:
         source_root = default_module_roots()[0] / "effects"
@@ -681,6 +689,25 @@ class ModuleInstallerUnitTests(unittest.TestCase):
             self.assertIn("Do not store engine objects", agent)
             self.assertIn("Do not use this module as a combat system", agent)
             self.assertIn("save_participants", agent)
+
+    def test_quests_docs_describe_boundaries(self) -> None:
+        source_root = default_module_roots()[0]
+        readme = (source_root / "quests" / "README.md").read_text(encoding="utf-8")
+        agent = (source_root / "quests" / "AGENT.md").read_text(encoding="utf-8")
+
+        self.assertIn("QuestDefinition", readme)
+        self.assertIn("ObjectiveDefinition", readme)
+        self.assertIn("QuestDatabase", readme)
+        self.assertIn("QuestLog", readme)
+        self.assertIn("advance_objective", readme)
+        self.assertIn("completion_policy", readme)
+        self.assertIn("Rewards are reported", readme)
+        self.assertIn("does not automatically", readme)
+        self.assertIn("get_state()", readme)
+        self.assertIn("apply_state(data)", readme)
+        self.assertIn("Prefer explicit progression", agent)
+        self.assertIn("JSON-compatible", agent)
+        self.assertIn("Do not add hidden dependencies", agent)
 
     def test_save_service_rejects_non_finite_float_states(self) -> None:
         source_root = default_module_roots()[0]

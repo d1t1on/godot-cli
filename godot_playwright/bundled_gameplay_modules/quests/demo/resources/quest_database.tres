@@ -1,0 +1,8 @@
+[gd_resource type="Resource" script_class="QuestDatabase" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://addons/quests/quest_database.gd" id="1_database_script"]
+[ext_resource type="Resource" path="res://resources/quests_demo/repair_beacon.tres" id="2_repair_beacon"]
+
+[resource]
+script = ExtResource("1_database_script")
+quests = Array[Resource]([ExtResource("2_repair_beacon")])
