@@ -175,6 +175,8 @@ func _is_json_compatible(value: Variant, seen: Array = []) -> bool:
 	return false
 
 
+# Array and Dictionary are reference types, so identity comparison is the
+# correct way to detect recursive self-reference while validating JSON data.
 func _contains_same_container(seen: Array, value: Variant) -> bool:
 	for container in seen:
 		if is_same(container, value):

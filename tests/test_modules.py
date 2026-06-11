@@ -2878,6 +2878,8 @@ def _write_quests_database_probe(project: Path) -> None:
             """\
             extends Node
 
+            signal probe_signal
+
             const ObjectiveDefinitionData := preload("res://addons/quests/objective_definition.gd")
             const QuestDefinitionData := preload("res://addons/quests/quest_definition.gd")
             const QuestDatabaseData := preload("res://addons/quests/quest_database.gd")
@@ -2911,7 +2913,11 @@ def _write_quests_database_probe(project: Path) -> None:
                 _assert_string("first_quest", String(valid_database.get_quest("first_quest").quest_id), "quest lookup", errors)
                 _assert_string("collect", String(valid_database.get_objective("first_quest", "collect").objective_id), "objective lookup", errors)
                 _assert_bool(valid_database.get_objective("first_quest", "missing") == null, "missing objective returns null", errors)
-                _assert_array(["first_quest"], valid_database.get_quest_ids(), "quest ids", errors)
+                _assert_int(1, valid_database.get_quest_ids().size(), "quest id count", errors)
+
+                var null_quest_database := QuestDatabaseData.new()
+                null_quest_database.quests.append(null)
+                _assert_error(null_quest_database.validate(), "quests[0] is null", "null quest resource", errors)
 
                 var invalid_resource_database := QuestDatabaseData.new()
                 invalid_resource_database.quests.append(Resource.new())
@@ -2922,6 +2928,12 @@ def _write_quests_database_probe(project: Path) -> None:
                 var empty_database := QuestDatabaseData.new()
                 empty_database.quests.append(empty_id)
                 _assert_error(empty_database.validate(), "quest_id must be non-empty", "empty quest_id", errors)
+
+                var whitespace_id := QuestDefinitionData.new()
+                whitespace_id.quest_id = &" bad "
+                var whitespace_database := QuestDatabaseData.new()
+                whitespace_database.quests.append(whitespace_id)
+                _assert_error(whitespace_database.validate(), "must not contain leading or trailing whitespace", "whitespace quest_id", errors)
 
                 var duplicate := QuestDefinitionData.new()
                 duplicate.quest_id = &"first_quest"
@@ -2937,6 +2949,13 @@ def _write_quests_database_probe(project: Path) -> None:
                 bad_policy_database.quests.append(bad_policy)
                 _assert_error(bad_policy_database.validate(), "completion_policy must be one of", "bad completion policy", errors)
 
+                var bad_quest_default_data := QuestDefinitionData.new()
+                bad_quest_default_data.quest_id = &"bad_quest_default_data"
+                bad_quest_default_data.default_data = {"node": self}
+                var bad_quest_default_data_database := QuestDatabaseData.new()
+                bad_quest_default_data_database.quests.append(bad_quest_default_data)
+                _assert_error(bad_quest_default_data_database.validate(), "default_data must be JSON-compatible", "bad quest default_data", errors)
+
                 var duplicate_objective_a := ObjectiveDefinitionData.new()
                 duplicate_objective_a.objective_id = &"same"
                 var duplicate_objective_b := ObjectiveDefinitionData.new()
@@ -2948,6 +2967,29 @@ def _write_quests_database_probe(project: Path) -> None:
                 duplicate_objectives_database.quests.append(duplicate_objectives)
                 _assert_error(duplicate_objectives_database.validate(), "Duplicate objective_id", "duplicate objective_id", errors)
 
+                var null_objective := QuestDefinitionData.new()
+                null_objective.quest_id = &"null_objective"
+                null_objective.objectives = [null]
+                var null_objective_database := QuestDatabaseData.new()
+                null_objective_database.quests.append(null_objective)
+                _assert_error(null_objective_database.validate(), "objectives[0] is null", "null objective resource", errors)
+
+                var invalid_objective_resource := QuestDefinitionData.new()
+                invalid_objective_resource.quest_id = &"invalid_objective_resource"
+                invalid_objective_resource.objectives = [Resource.new()]
+                var invalid_objective_resource_database := QuestDatabaseData.new()
+                invalid_objective_resource_database.quests.append(invalid_objective_resource)
+                _assert_error(invalid_objective_resource_database.validate(), "must be an ObjectiveDefinition", "invalid objective resource", errors)
+
+                var whitespace_objective := ObjectiveDefinitionData.new()
+                whitespace_objective.objective_id = &" bad "
+                var whitespace_objective_quest := QuestDefinitionData.new()
+                whitespace_objective_quest.quest_id = &"whitespace_objective"
+                whitespace_objective_quest.objectives = [whitespace_objective]
+                var whitespace_objective_database := QuestDatabaseData.new()
+                whitespace_objective_database.quests.append(whitespace_objective_quest)
+                _assert_error(whitespace_objective_database.validate(), "must not contain leading or trailing whitespace", "whitespace objective_id", errors)
+
                 var bad_target_objective := ObjectiveDefinitionData.new()
                 bad_target_objective.objective_id = &"bad_target"
                 bad_target_objective.target_amount = 0
@@ -2958,12 +3000,75 @@ def _write_quests_database_probe(project: Path) -> None:
                 bad_target_database.quests.append(bad_target)
                 _assert_error(bad_target_database.validate(), "target_amount must be 1 or greater", "bad target_amount", errors)
 
+                var bad_objective_default_data := ObjectiveDefinitionData.new()
+                bad_objective_default_data.objective_id = &"bad_objective_default_data"
+                bad_objective_default_data.default_data = {"node": self}
+                var bad_objective_default_quest := QuestDefinitionData.new()
+                bad_objective_default_quest.quest_id = &"bad_objective_default_data"
+                bad_objective_default_quest.objectives = [bad_objective_default_data]
+                var bad_objective_default_database := QuestDatabaseData.new()
+                bad_objective_default_database.quests.append(bad_objective_default_quest)
+                _assert_error(bad_objective_default_database.validate(), "default_data must be JSON-compatible", "bad objective default_data", errors)
+
                 var bad_rewards := QuestDefinitionData.new()
                 bad_rewards.quest_id = &"bad_rewards"
                 bad_rewards.rewards = {"node": self}
                 var bad_rewards_database := QuestDatabaseData.new()
                 bad_rewards_database.quests.append(bad_rewards)
                 _assert_error(bad_rewards_database.validate(), "rewards must be JSON-compatible", "bad rewards", errors)
+
+                var callable_rewards := QuestDefinitionData.new()
+                callable_rewards.quest_id = &"callable_rewards"
+                callable_rewards.rewards = {"callable": Callable(self, "_noop")}
+                var callable_rewards_database := QuestDatabaseData.new()
+                callable_rewards_database.quests.append(callable_rewards)
+                _assert_error(callable_rewards_database.validate(), "rewards must be JSON-compatible", "callable rewards", errors)
+
+                var signal_rewards := QuestDefinitionData.new()
+                signal_rewards.quest_id = &"signal_rewards"
+                signal_rewards.rewards = {"signal": probe_signal}
+                var signal_rewards_database := QuestDatabaseData.new()
+                signal_rewards_database.quests.append(signal_rewards)
+                _assert_error(signal_rewards_database.validate(), "rewards must be JSON-compatible", "signal rewards", errors)
+
+                var inf_rewards := QuestDefinitionData.new()
+                inf_rewards.quest_id = &"inf_rewards"
+                inf_rewards.rewards = {"value": INF}
+                var inf_rewards_database := QuestDatabaseData.new()
+                inf_rewards_database.quests.append(inf_rewards)
+                _assert_error(inf_rewards_database.validate(), "rewards must be JSON-compatible", "inf rewards", errors)
+
+                var nan_rewards := QuestDefinitionData.new()
+                nan_rewards.quest_id = &"nan_rewards"
+                nan_rewards.rewards = {"value": NAN}
+                var nan_rewards_database := QuestDatabaseData.new()
+                nan_rewards_database.quests.append(nan_rewards)
+                _assert_error(nan_rewards_database.validate(), "rewards must be JSON-compatible", "nan rewards", errors)
+
+                var cyclic_array_value := []
+                cyclic_array_value.append(cyclic_array_value)
+                var cyclic_array := QuestDefinitionData.new()
+                cyclic_array.quest_id = &"cyclic_array"
+                cyclic_array.rewards = {"value": cyclic_array_value}
+                var cyclic_array_database := QuestDatabaseData.new()
+                cyclic_array_database.quests.append(cyclic_array)
+                _assert_error(cyclic_array_database.validate(), "rewards must be JSON-compatible", "cyclic array rewards", errors)
+
+                var cyclic_dict_value := {}
+                cyclic_dict_value["self"] = cyclic_dict_value
+                var cyclic_dict := QuestDefinitionData.new()
+                cyclic_dict.quest_id = &"cyclic_dict"
+                cyclic_dict.default_data = cyclic_dict_value
+                var cyclic_dict_database := QuestDatabaseData.new()
+                cyclic_dict_database.quests.append(cyclic_dict)
+                _assert_error(cyclic_dict_database.validate(), "default_data must be JSON-compatible", "cyclic dict default_data", errors)
+
+                var bad_key_rewards := QuestDefinitionData.new()
+                bad_key_rewards.quest_id = &"bad_key_rewards"
+                bad_key_rewards.rewards = {1: "one"}
+                var bad_key_rewards_database := QuestDatabaseData.new()
+                bad_key_rewards_database.quests.append(bad_key_rewards)
+                _assert_error(bad_key_rewards_database.validate(), "rewards must be JSON-compatible", "non-string key rewards", errors)
 
                 return {"ok": errors.is_empty(), "errors": errors}
 
@@ -2993,9 +3098,13 @@ def _write_quests_database_probe(project: Path) -> None:
                     errors.append("%s: expected %s, got %s" % [label, expected, actual])
 
 
-            func _assert_array(expected: Array, actual: Array, label: String, errors: Array[String]) -> void:
+            func _assert_int(expected: int, actual: int, label: String, errors: Array[String]) -> void:
                 if expected != actual:
-                    errors.append("%s: expected %s, got %s" % [label, str(expected), str(actual)])
+                    errors.append("%s: expected %d, got %d" % [label, expected, actual])
+
+
+            func _noop() -> void:
+                pass
             """
         ),
         encoding="utf-8",
