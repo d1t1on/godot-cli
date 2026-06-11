@@ -817,6 +817,38 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn('const POLICY_ALL: String = "all"', constants)
         self.assertIn('const POLICY_ANY: String = "any"', constants)
 
+    def test_quests_source_defines_log_api(self) -> None:
+        source_root = default_module_roots()[0]
+        quest_log = (source_root / "quests" / "addons" / "quests" / "quest_log.gd").read_text(encoding="utf-8")
+
+        self.assertIn("class_name QuestLog", quest_log)
+        self.assertIn("@export var database: Resource", quest_log)
+        self.assertIn("@export var save_id: StringName", quest_log)
+        self.assertIn("@export var initialize_on_ready: bool = true", quest_log)
+        self.assertIn("signal quest_started", quest_log)
+        self.assertIn("signal quest_completed", quest_log)
+        self.assertIn("signal quest_failed", quest_log)
+        self.assertIn("signal quest_status_changed", quest_log)
+        self.assertIn("signal objective_progress_changed", quest_log)
+        self.assertIn("signal objective_completed", quest_log)
+        self.assertIn("signal quests_changed", quest_log)
+        self.assertIn("func initialize_quests(reset: bool = false) -> Dictionary", quest_log)
+        self.assertIn("func has_quest(quest_id: String) -> bool", quest_log)
+        self.assertIn("func start_quest(quest_id: String, data: Dictionary = {}) -> Dictionary", quest_log)
+        self.assertIn("func complete_quest(quest_id: String, data: Dictionary = {}) -> Dictionary", quest_log)
+        self.assertIn("func fail_quest(quest_id: String, data: Dictionary = {}) -> Dictionary", quest_log)
+        self.assertIn("func set_quest_active(quest_id: String, active: bool) -> Dictionary", quest_log)
+        self.assertIn("func get_quest(quest_id: String) -> Dictionary", quest_log)
+        self.assertIn("func get_quests() -> Array", quest_log)
+        self.assertIn("func clear_runtime_state() -> void", quest_log)
+        self.assertIn("func get_state() -> Dictionary", quest_log)
+        self.assertIn("func apply_state(data: Dictionary) -> Dictionary", quest_log)
+        self.assertIn("func get_save_id() -> String", quest_log)
+        self.assertIn("func save_state() -> Dictionary", quest_log)
+        self.assertIn("func load_state(data: Dictionary) -> void", quest_log)
+        self.assertIn("_quests_by_id", quest_log)
+        self.assertIn("_quest_ids", quest_log)
+
     def test_abilities_source_defines_container_api(self) -> None:
         source_root = default_module_roots()[0]
         container = (source_root / "abilities" / "addons" / "abilities" / "ability_container.gd").read_text(
@@ -1453,6 +1485,26 @@ class QuestsModuleGodotTests(unittest.TestCase):
 
             with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
                 result = godot.locator("#QuestsDatabaseProbe").call("run_probe")
+
+        self.assertTrue(result["ok"], result)
+
+    def test_quest_log_status_transitions_run_in_godot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Quests Log Status Probe")
+            add_module(project, "quests")
+            _write_quests_log_status_probe(project)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/quests_log_status_probe.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#QuestsLogStatusProbe").call("run_probe")
 
         self.assertTrue(result["ok"], result)
 
@@ -3117,6 +3169,178 @@ def _write_quests_database_probe(project: Path) -> None:
             [ext_resource type="Script" path="res://scripts/quests_database_probe.gd" id="1_probe_script"]
 
             [node name="QuestsDatabaseProbe" type="Node"]
+            script = ExtResource("1_probe_script")
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_quests_log_status_probe(project: Path) -> None:
+    (project / "scripts" / "quests_log_status_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            const ObjectiveDefinitionData := preload("res://addons/quests/objective_definition.gd")
+            const QuestDefinitionData := preload("res://addons/quests/quest_definition.gd")
+            const QuestDatabaseData := preload("res://addons/quests/quest_database.gd")
+            const QuestLogData := preload("res://addons/quests/quest_log.gd")
+
+
+            func run_probe() -> Dictionary:
+                var errors: Array[String] = []
+                var log := QuestLogData.new()
+                log.initialize_on_ready = false
+                log.database = _make_database()
+                add_child(log)
+
+                var init_result: Dictionary = log.initialize_quests()
+                _assert_ok(init_result, "initialize_quests", errors)
+                _assert_bool(log.has_quest("repair_beacon"), "repair_beacon should exist", errors)
+                _assert_bool(log.has_quest(" daily_check "), "has_quest should normalize ids", errors)
+
+                var quests: Array = log.get_quests()
+                _assert_int(2, quests.size(), "initialized quest count", errors)
+                if quests.size() == 2:
+                    _assert_string("repair_beacon", String(quests[0].get("quest_id", "")), "first quest order", errors)
+                    _assert_string("daily_check", String(quests[1].get("quest_id", "")), "second quest order", errors)
+
+                var repair_before: Dictionary = log.get_quest("repair_beacon")
+                _assert_string("inactive", String(repair_before.get("status", "")), "repair initial status", errors)
+                _assert_objective_status(repair_before, "collect_parts", "inactive", "repair collect initial status", errors)
+                _assert_objective_status(repair_before, "scan_beacon", "inactive", "repair scan initial status", errors)
+
+                var daily_before: Dictionary = log.get_quest("daily_check")
+                _assert_string("active", String(daily_before.get("status", "")), "daily initial status", errors)
+                _assert_objective_status(daily_before, "check_console", "active", "daily objective initial status", errors)
+
+                var copied: Dictionary = log.get_quest("repair_beacon")
+                copied["status"] = "completed"
+                copied["data"]["giver"] = "mutated"
+                copied["objectives"][0]["status"] = "completed"
+                var after_copy_mutation: Dictionary = log.get_quest("repair_beacon")
+                _assert_string("inactive", String(after_copy_mutation.get("status", "")), "quest snapshot should be copied", errors)
+                _assert_string("mechanic", String(after_copy_mutation.get("data", {}).get("giver", "")), "quest data snapshot should be copied", errors)
+                _assert_objective_status(after_copy_mutation, "collect_parts", "inactive", "objective snapshot should be copied", errors)
+
+                var start: Dictionary = log.start_quest(" repair_beacon ", {"source": "probe"})
+                _assert_ok(start, "start repair_beacon", errors)
+                _assert_string("active", String(start.get("status", "")), "start result status", errors)
+                _assert_string("active", String(log.get_quest("repair_beacon").get("status", "")), "repair status after start", errors)
+                _assert_objective_status(log.get_quest("repair_beacon"), "collect_parts", "active", "collect status after start", errors)
+                _assert_objective_status(log.get_quest("repair_beacon"), "scan_beacon", "active", "scan status after start", errors)
+                _assert_has_event(start.get("events", []), "quest_started", "repair_beacon", "start event", errors)
+
+                var start_again: Dictionary = log.start_quest("repair_beacon")
+                _assert_ok(start_again, "start repair_beacon no-op", errors)
+                _assert_string("active", String(log.get_quest("repair_beacon").get("status", "")), "repair status after no-op start", errors)
+
+                var fail: Dictionary = log.fail_quest("repair_beacon", {"reason": "probe"})
+                _assert_ok(fail, "fail repair_beacon", errors)
+                _assert_string("failed", String(fail.get("status", "")), "fail result status", errors)
+                _assert_string("failed", String(log.get_quest("repair_beacon").get("status", "")), "repair status after fail", errors)
+                _assert_has_event(fail.get("events", []), "quest_failed", "repair_beacon", "fail event", errors)
+
+                var restart_failed: Dictionary = log.start_quest("repair_beacon")
+                _assert_error(restart_failed, "terminal", "start failed quest", errors)
+
+                var deactivate_daily: Dictionary = log.set_quest_active("daily_check", false)
+                _assert_ok(deactivate_daily, "deactivate daily_check", errors)
+                _assert_string("inactive", String(log.get_quest("daily_check").get("status", "")), "daily status after deactivate", errors)
+                _assert_objective_status(log.get_quest("daily_check"), "check_console", "inactive", "daily objective after deactivate", errors)
+
+                return {"ok": errors.is_empty(), "errors": errors}
+
+
+            func _make_database() -> Resource:
+                var collect := _make_objective(&"collect_parts", 3)
+                collect.default_data = {"item_id": "spare_part"}
+                var scan := _make_objective(&"scan_beacon", 1)
+
+                var repair := QuestDefinitionData.new()
+                repair.quest_id = &"repair_beacon"
+                repair.display_name = "Repair Beacon"
+                repair.objectives = [collect, scan]
+                repair.completion_policy = "all"
+                repair.default_data = {"giver": "mechanic"}
+
+                var check_console := _make_objective(&"check_console", 1)
+                var daily := QuestDefinitionData.new()
+                daily.quest_id = &"daily_check"
+                daily.display_name = "Daily Check"
+                daily.objectives = [check_console]
+                daily.start_active = true
+
+                var database := QuestDatabaseData.new()
+                database.quests.append(repair)
+                database.quests.append(daily)
+                return database
+
+
+            func _make_objective(objective_id: StringName, target_amount: int) -> Resource:
+                var objective := ObjectiveDefinitionData.new()
+                objective.objective_id = objective_id
+                objective.display_name = String(objective_id)
+                objective.target_amount = target_amount
+                return objective
+
+
+            func _assert_ok(result: Dictionary, label: String, errors: Array[String]) -> void:
+                if not bool(result.get("ok", false)):
+                    errors.append("%s failed: %s" % [label, str(result)])
+
+
+            func _assert_error(result: Dictionary, needle: String, label: String, errors: Array[String]) -> void:
+                if bool(result.get("ok", true)):
+                    errors.append("%s should fail" % label)
+                    return
+                for message in result.get("errors", []):
+                    if String(message).contains(needle):
+                        return
+                errors.append("%s missing %s in %s" % [label, needle, str(result)])
+
+
+            func _assert_has_event(events: Array, event_type: String, quest_id: String, label: String, errors: Array[String]) -> void:
+                for event in events:
+                    if String(event.get("type", "")) == event_type and String(event.get("quest_id", "")) == quest_id:
+                        return
+                errors.append("%s missing %s for %s in %s" % [label, event_type, quest_id, str(events)])
+
+
+            func _assert_objective_status(quest: Dictionary, objective_id: String, expected_status: String, label: String, errors: Array[String]) -> void:
+                for objective in quest.get("objectives", []):
+                    if String(objective.get("objective_id", "")) == objective_id:
+                        _assert_string(expected_status, String(objective.get("status", "")), label, errors)
+                        return
+                errors.append("%s missing objective %s in %s" % [label, objective_id, str(quest)])
+
+
+            func _assert_bool(value: bool, message: String, errors: Array[String]) -> void:
+                if not value:
+                    errors.append(message)
+
+
+            func _assert_string(expected: String, actual: String, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %s, got %s" % [label, expected, actual])
+
+
+            func _assert_int(expected: int, actual: int, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %d, got %d" % [label, expected, actual])
+            """
+        ),
+        encoding="utf-8",
+    )
+    (project / "scenes" / "quests_log_status_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://scripts/quests_log_status_probe.gd" id="1_probe_script"]
+
+            [node name="QuestsLogStatusProbe" type="Node"]
             script = ExtResource("1_probe_script")
             """
         ),
