@@ -1533,6 +1533,47 @@ class QuestsModuleGodotTests(unittest.TestCase):
 
         self.assertTrue(result["ok"], result)
 
+    def test_quest_log_state_persistence_runs_in_godot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Quests Persistence Probe")
+            add_module(project, "quests")
+            _write_quests_persistence_probe(project)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/quests_persistence_probe.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#QuestsPersistenceProbe").call("run_probe")
+
+        self.assertTrue(result["ok"], result)
+
+    def test_quests_integrate_with_save_load_when_installed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Quests Save Load Probe")
+            add_module(project, "save_load")
+            add_module(project, "quests")
+            _write_quests_save_load_probe(project)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/quests_save_load_probe.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#QuestsSaveLoadProbe").call("run_probe")
+
+        self.assertTrue(result["ok"], result)
+
 
 @unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
 class StatsModuleGodotTests(unittest.TestCase):
@@ -3578,6 +3619,361 @@ def _write_quests_progression_probe(project: Path) -> None:
             [ext_resource type="Script" path="res://scripts/quests_progression_probe.gd" id="1_probe_script"]
 
             [node name="QuestsProgressionProbe" type="Node"]
+            script = ExtResource("1_probe_script")
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_quests_persistence_probe(project: Path) -> None:
+    (project / "scripts" / "quests_persistence_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            const ObjectiveDefinitionData := preload("res://addons/quests/objective_definition.gd")
+            const QuestDefinitionData := preload("res://addons/quests/quest_definition.gd")
+            const QuestDatabaseData := preload("res://addons/quests/quest_database.gd")
+            const QuestLogData := preload("res://addons/quests/quest_log.gd")
+
+
+            func run_probe() -> Dictionary:
+                var errors: Array[String] = []
+                var database := _make_database(false)
+                var log := _make_log(database)
+                _assert_ok(log.initialize_quests(), "initialize_quests", errors)
+                _assert_ok(log.start_quest("repair_beacon", {"started_by": "probe"}), "start repair_beacon", errors)
+                _assert_ok(log.advance_objective("repair_beacon", "collect_parts", 2, {"source": "loot"}), "advance collect", errors)
+
+                var saved: Dictionary = log.get_state()
+                _assert_int(1, int(saved.get("schema_version", 0)), "schema_version", errors)
+                _assert_int(2, (saved.get("quests", []) as Array).size(), "saved quest count", errors)
+                _assert_string("repair_beacon", String(saved.get("quests", [])[0].get("quest_id", "")), "saved quest order 0", errors)
+                _assert_string("daily_check", String(saved.get("quests", [])[1].get("quest_id", "")), "saved quest order 1", errors)
+
+                var shuffled: Dictionary = saved.duplicate(true)
+                shuffled["quests"] = [saved["quests"][1].duplicate(true), saved["quests"][0].duplicate(true)]
+                shuffled["quests"][1]["objectives"] = [
+                    saved["quests"][0]["objectives"][1].duplicate(true),
+                    saved["quests"][0]["objectives"][0].duplicate(true),
+                ]
+                var restored := _make_log(database)
+                _assert_ok(restored.apply_state(shuffled), "apply shuffled valid state", errors)
+                _assert_string("repair_beacon", String(restored.get_state().get("quests", [])[0].get("quest_id", "")), "restored quest order", errors)
+                _assert_objective_progress(restored.get_quest("repair_beacon"), "collect_parts", 2, "restored collect progress", errors)
+                _assert_objective_status(restored.get_quest("repair_beacon"), "collect_parts", "active", "restored collect status", errors)
+                _assert_string("loot", String(_get_objective(restored.get_quest("repair_beacon"), "collect_parts").get("data", {}).get("source", "")), "restored objective data", errors)
+                _assert_string("probe", String(restored.get_quest("repair_beacon").get("data", {}).get("started_by", "")), "restored quest data", errors)
+
+                var expanded := _make_log(_make_database(true))
+                _assert_ok(expanded.apply_state(saved), "apply missing new quest state", errors)
+                _assert_bool(expanded.has_quest("late_quest"), "missing saved quest should fill from definitions", errors)
+                _assert_string("inactive", String(expanded.get_quest("late_quest").get("status", "")), "late quest default status", errors)
+                _assert_string("late", String(expanded.get_quest("late_quest").get("data", {}).get("kind", "")), "late quest default data", errors)
+
+                _assert_invalid_state(restored, _with_stale_quest(saved), "Unknown quest_id", "stale quest id", errors)
+                _assert_invalid_state(restored, _with_stale_objective(saved), "Unknown objective_id", "stale objective id", errors)
+                _assert_invalid_state(restored, _with_duplicate_quest(saved), "Duplicate quest_id", "duplicate quest id", errors)
+                _assert_invalid_state(restored, _with_duplicate_objective(saved), "Duplicate objective_id", "duplicate objective id", errors)
+                _assert_invalid_state(restored, _with_field(saved, "schema_version", 1.5), "schema_version must be an integer", "float schema version", errors)
+                _assert_invalid_state(restored, _with_field(saved, "schema_version", "1"), "schema_version must be an integer", "string schema version", errors)
+                _assert_invalid_state(restored, _with_objective_progress(saved, 1.5), "progress must be an integer", "float progress", errors)
+                _assert_invalid_state(restored, _with_objective_status_and_progress(saved, "completed", 1), "completed objective progress must equal target_amount", "completed below target", errors)
+                _assert_invalid_state(restored, _with_objective_status_and_progress(saved, "active", 3), "active objective progress must be below target_amount", "active at target", errors)
+                _assert_invalid_state(restored, _with_inactive_quest_active_objective(saved), "inactive quest cannot contain active objectives", "active objective under inactive quest", errors)
+                _assert_invalid_state(restored, _with_non_json_data(saved), "data must be JSON-compatible", "non-json runtime data", errors)
+
+                return {"ok": errors.is_empty(), "errors": errors}
+
+
+            func _make_log(database: Resource) -> Node:
+                var log := QuestLogData.new()
+                log.initialize_on_ready = false
+                log.database = database
+                add_child(log)
+                return log
+
+
+            func _make_database(include_late: bool) -> Resource:
+                var collect := _make_objective(&"collect_parts", 3)
+                collect.default_data = {"item_id": "spare_part"}
+                var scan := _make_objective(&"scan_beacon", 1)
+                var repair := QuestDefinitionData.new()
+                repair.quest_id = &"repair_beacon"
+                repair.objectives = [collect, scan]
+                repair.default_data = {"giver": "mechanic"}
+
+                var check := _make_objective(&"check_console", 1)
+                var daily := QuestDefinitionData.new()
+                daily.quest_id = &"daily_check"
+                daily.objectives = [check]
+
+                var database := QuestDatabaseData.new()
+                database.quests.append(repair)
+                database.quests.append(daily)
+                if include_late:
+                    var late_objective := _make_objective(&"read_briefing", 1)
+                    var late := QuestDefinitionData.new()
+                    late.quest_id = &"late_quest"
+                    late.objectives = [late_objective]
+                    late.default_data = {"kind": "late"}
+                    database.quests.append(late)
+                return database
+
+
+            func _make_objective(objective_id: StringName, target_amount: int) -> Resource:
+                var objective := ObjectiveDefinitionData.new()
+                objective.objective_id = objective_id
+                objective.display_name = String(objective_id)
+                objective.target_amount = target_amount
+                return objective
+
+
+            func _with_field(saved: Dictionary, field_name: String, value: Variant) -> Dictionary:
+                var data := saved.duplicate(true)
+                data[field_name] = value
+                return data
+
+
+            func _with_stale_quest(saved: Dictionary) -> Dictionary:
+                var data := saved.duplicate(true)
+                data["quests"].append({"quest_id": "stale_quest", "status": "inactive", "data": {}, "objectives": []})
+                return data
+
+
+            func _with_stale_objective(saved: Dictionary) -> Dictionary:
+                var data := saved.duplicate(true)
+                data["quests"][0]["objectives"].append({"objective_id": "stale_objective", "status": "active", "progress": 0, "data": {}})
+                return data
+
+
+            func _with_duplicate_quest(saved: Dictionary) -> Dictionary:
+                var data := saved.duplicate(true)
+                data["quests"].append(data["quests"][0].duplicate(true))
+                return data
+
+
+            func _with_duplicate_objective(saved: Dictionary) -> Dictionary:
+                var data := saved.duplicate(true)
+                data["quests"][0]["objectives"].append(data["quests"][0]["objectives"][0].duplicate(true))
+                return data
+
+
+            func _with_objective_progress(saved: Dictionary, progress: Variant) -> Dictionary:
+                var data := saved.duplicate(true)
+                data["quests"][0]["objectives"][0]["progress"] = progress
+                return data
+
+
+            func _with_objective_status_and_progress(saved: Dictionary, status: String, progress: int) -> Dictionary:
+                var data := saved.duplicate(true)
+                data["quests"][0]["objectives"][0]["status"] = status
+                data["quests"][0]["objectives"][0]["progress"] = progress
+                return data
+
+
+            func _with_inactive_quest_active_objective(saved: Dictionary) -> Dictionary:
+                var data := saved.duplicate(true)
+                data["quests"][0]["status"] = "inactive"
+                data["quests"][0]["objectives"][0]["status"] = "active"
+                data["quests"][0]["objectives"][0]["progress"] = 0
+                return data
+
+
+            func _with_non_json_data(saved: Dictionary) -> Dictionary:
+                var data := saved.duplicate(true)
+                data["quests"][0]["data"] = {"node": self}
+                return data
+
+
+            func _assert_invalid_state(log: Node, state: Dictionary, needle: String, label: String, errors: Array[String]) -> void:
+                var before: Dictionary = log.get_state()
+                var result: Dictionary = log.apply_state(state)
+                _assert_error(result, needle, label, errors)
+                _assert_state_unchanged(before, log, label, errors)
+
+
+            func _assert_state_unchanged(before: Dictionary, log: Node, label: String, errors: Array[String]) -> void:
+                var after: Dictionary = log.get_state()
+                if before != after:
+                    errors.append("%s mutated state: before %s after %s" % [label, str(before), str(after)])
+
+
+            func _assert_ok(result: Dictionary, label: String, errors: Array[String]) -> void:
+                if not bool(result.get("ok", false)):
+                    errors.append("%s failed: %s" % [label, str(result)])
+
+
+            func _assert_error(result: Dictionary, needle: String, label: String, errors: Array[String]) -> void:
+                if bool(result.get("ok", true)):
+                    errors.append("%s should fail" % label)
+                    return
+                for message in result.get("errors", []):
+                    if String(message).contains(needle):
+                        return
+                errors.append("%s missing %s in %s" % [label, needle, str(result)])
+
+
+            func _assert_objective_status(quest: Dictionary, objective_id: String, expected_status: String, label: String, errors: Array[String]) -> void:
+                var objective := _get_objective(quest, objective_id)
+                if objective.is_empty():
+                    errors.append("%s missing objective %s in %s" % [label, objective_id, str(quest)])
+                    return
+                _assert_string(expected_status, String(objective.get("status", "")), label, errors)
+
+
+            func _assert_objective_progress(quest: Dictionary, objective_id: String, expected_progress: int, label: String, errors: Array[String]) -> void:
+                var objective := _get_objective(quest, objective_id)
+                if objective.is_empty():
+                    errors.append("%s missing objective %s in %s" % [label, objective_id, str(quest)])
+                    return
+                _assert_int(expected_progress, int(objective.get("progress", -1)), label, errors)
+
+
+            func _get_objective(quest: Dictionary, objective_id: String) -> Dictionary:
+                for objective in quest.get("objectives", []):
+                    if String(objective.get("objective_id", "")) == objective_id:
+                        return objective
+                return {}
+
+
+            func _assert_bool(value: bool, message: String, errors: Array[String]) -> void:
+                if not value:
+                    errors.append(message)
+
+
+            func _assert_string(expected: String, actual: String, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %s, got %s" % [label, expected, actual])
+
+
+            func _assert_int(expected: int, actual: int, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %d, got %d" % [label, expected, actual])
+            """
+        ),
+        encoding="utf-8",
+    )
+    (project / "scenes" / "quests_persistence_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://scripts/quests_persistence_probe.gd" id="1_probe_script"]
+
+            [node name="QuestsPersistenceProbe" type="Node"]
+            script = ExtResource("1_probe_script")
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_quests_save_load_probe(project: Path) -> None:
+    (project / "scripts" / "quests_save_load_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            const ObjectiveDefinitionData := preload("res://addons/quests/objective_definition.gd")
+            const QuestDefinitionData := preload("res://addons/quests/quest_definition.gd")
+            const QuestDatabaseData := preload("res://addons/quests/quest_database.gd")
+            const QuestLogData := preload("res://addons/quests/quest_log.gd")
+
+
+            func run_probe() -> Dictionary:
+                var errors: Array[String] = []
+                var database := _make_database()
+                var log := QuestLogData.new()
+                log.save_id = &"probe_quests"
+                log.initialize_on_ready = false
+                log.database = database
+                add_child(log)
+                _assert_bool(log.is_in_group("save_participants"), "QuestLog should join save_participants", errors)
+                _assert_ok(log.initialize_quests(), "initialize_quests", errors)
+                _assert_ok(log.start_quest("repair_beacon"), "start repair", errors)
+                _assert_ok(log.advance_objective("repair_beacon", "collect_parts", 2), "advance collect", errors)
+
+                var saved_state: Dictionary = log.save_state()
+                _assert_objective_progress(_get_saved_quest(saved_state, "repair_beacon"), "collect_parts", 2, "saved collect progress", errors)
+
+                var restored := QuestLogData.new()
+                restored.initialize_on_ready = false
+                restored.database = database
+                add_child(restored)
+                restored.load_state(saved_state)
+                _assert_string("active", String(restored.get_quest("repair_beacon").get("status", "")), "restored quest status", errors)
+                _assert_objective_progress(restored.get_quest("repair_beacon"), "collect_parts", 2, "restored collect progress", errors)
+
+                return {"ok": errors.is_empty(), "errors": errors}
+
+
+            func _make_database() -> Resource:
+                var collect := _make_objective(&"collect_parts", 3)
+                var scan := _make_objective(&"scan_beacon", 1)
+                var repair := QuestDefinitionData.new()
+                repair.quest_id = &"repair_beacon"
+                repair.objectives = [collect, scan]
+
+                var database := QuestDatabaseData.new()
+                database.quests.append(repair)
+                return database
+
+
+            func _make_objective(objective_id: StringName, target_amount: int) -> Resource:
+                var objective := ObjectiveDefinitionData.new()
+                objective.objective_id = objective_id
+                objective.display_name = String(objective_id)
+                objective.target_amount = target_amount
+                return objective
+
+
+            func _get_saved_quest(state: Dictionary, quest_id: String) -> Dictionary:
+                for quest in state.get("quests", []):
+                    if String(quest.get("quest_id", "")) == quest_id:
+                        return quest
+                return {}
+
+
+            func _assert_ok(result: Dictionary, label: String, errors: Array[String]) -> void:
+                if not bool(result.get("ok", false)):
+                    errors.append("%s failed: %s" % [label, str(result)])
+
+
+            func _assert_objective_progress(quest: Dictionary, objective_id: String, expected_progress: int, label: String, errors: Array[String]) -> void:
+                for objective in quest.get("objectives", []):
+                    if String(objective.get("objective_id", "")) == objective_id:
+                        _assert_int(expected_progress, int(objective.get("progress", -1)), label, errors)
+                        return
+                errors.append("%s missing objective %s in %s" % [label, objective_id, str(quest)])
+
+
+            func _assert_bool(value: bool, message: String, errors: Array[String]) -> void:
+                if not value:
+                    errors.append(message)
+
+
+            func _assert_string(expected: String, actual: String, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %s, got %s" % [label, expected, actual])
+
+
+            func _assert_int(expected: int, actual: int, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %d, got %d" % [label, expected, actual])
+            """
+        ),
+        encoding="utf-8",
+    )
+    (project / "scenes" / "quests_save_load_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://scripts/quests_save_load_probe.gd" id="1_probe_script"]
+
+            [node name="QuestsSaveLoadProbe" type="Node"]
             script = ExtResource("1_probe_script")
             """
         ),

@@ -236,7 +236,12 @@ func get_state() -> Dictionary:
 
 func apply_state(data: Dictionary) -> Dictionary:
 	var result := QuestResultData.make(true)
-	QuestResultData.add_error(result, "apply_state is not implemented")
+	var parsed := _parse_state(data, result)
+	if not bool(result.get("ok", false)):
+		return result
+	_quests_by_id = parsed["quests_by_id"]
+	_quest_ids.assign(parsed["quest_ids"])
+	_initialized = true
 	return result
 
 
@@ -435,6 +440,190 @@ func _complete_quest_runtime(quest_id: String, result: Dictionary, data: Diction
 	result["rewards"] = _rewards_for_quest(quest_id)
 	_populate_result_from_quest(result, quest_id)
 	_emit_quest_status_change(quest_id, QuestConstantsData.EVENT_QUEST_COMPLETED, previous_status, result)
+
+
+func _parse_state(data: Dictionary, result: Dictionary) -> Dictionary:
+	var parsed := {"quests_by_id": {}, "quest_ids": []}
+	var saved_schema := _parse_integer_field(data.get("schema_version", null), "schema_version", result)
+	if saved_schema != QuestConstantsData.SCHEMA_VERSION:
+		QuestResultData.add_error(result, "schema_version must be %d" % QuestConstantsData.SCHEMA_VERSION)
+
+	var raw_quests = data.get("quests", null)
+	if not (raw_quests is Array):
+		QuestResultData.add_error(result, "quests must be an Array")
+		return parsed
+	if not _validate_database(result):
+		return parsed
+
+	var saved_by_id := {}
+	var seen_quests := {}
+	var saved_quests: Array = raw_quests
+	for index in range(saved_quests.size()):
+		var saved_value = saved_quests[index]
+		if not (saved_value is Dictionary):
+			QuestResultData.add_error(result, "quests[%d] must be a Dictionary" % index)
+			continue
+		var saved_quest: Dictionary = saved_value
+		var raw_quest_id = saved_quest.get("quest_id", "")
+		if typeof(raw_quest_id) != TYPE_STRING and typeof(raw_quest_id) != TYPE_STRING_NAME:
+			QuestResultData.add_error(result, "quests[%d].quest_id must be a string" % index)
+			continue
+		var quest_id := String(raw_quest_id)
+		var normalized := quest_id.strip_edges()
+		if normalized.is_empty():
+			QuestResultData.add_error(result, "quests[%d].quest_id must be non-empty" % index)
+			continue
+		if normalized != quest_id:
+			QuestResultData.add_error(result, "quests[%d].quest_id must not contain leading or trailing whitespace" % index)
+			continue
+		if seen_quests.has(normalized):
+			QuestResultData.add_error(result, "Duplicate quest_id: %s" % normalized)
+			continue
+		seen_quests[normalized] = true
+		if not bool(database.call("has_quest", normalized)):
+			QuestResultData.add_error(result, "Unknown quest_id: %s" % normalized)
+			continue
+		saved_by_id[normalized] = saved_quest
+
+	if not bool(result.get("ok", false)):
+		return parsed
+
+	var ids: Array[String] = []
+	ids.assign(database.call("get_quest_ids"))
+	for quest_id in ids:
+		var definition: Resource = database.call("get_quest", quest_id)
+		var quest_entry: Dictionary
+		if saved_by_id.has(quest_id):
+			quest_entry = _parse_quest_state(saved_by_id[quest_id], definition, result)
+		else:
+			quest_entry = _make_default_quest_entry(quest_id, definition)
+		(parsed["quests_by_id"] as Dictionary)[quest_id] = quest_entry
+		(parsed["quest_ids"] as Array).append(quest_id)
+	return parsed
+
+
+func _parse_quest_state(saved_quest: Dictionary, definition: Resource, result: Dictionary) -> Dictionary:
+	var quest_id := String(definition.quest_id)
+	var status := _parse_status(saved_quest.get("status", ""), [QuestConstantsData.STATUS_INACTIVE, QuestConstantsData.STATUS_ACTIVE, QuestConstantsData.STATUS_COMPLETED, QuestConstantsData.STATUS_FAILED], "quest status", result)
+	var raw_data = saved_quest.get("data", {})
+	var quest_data := {}
+	if not (raw_data is Dictionary):
+		QuestResultData.add_error(result, "quest data must be a Dictionary for quest_id: %s" % quest_id)
+	elif not _is_json_compatible(raw_data):
+		QuestResultData.add_error(result, "data must be JSON-compatible for quest_id: %s" % quest_id)
+	else:
+		quest_data = (raw_data as Dictionary).duplicate(true)
+
+	var raw_objectives = saved_quest.get("objectives", null)
+	if not (raw_objectives is Array):
+		QuestResultData.add_error(result, "objectives must be an Array for quest_id: %s" % quest_id)
+		return _make_default_quest_entry(quest_id, definition)
+
+	var saved_by_id := {}
+	var seen_objectives := {}
+	var valid_objective_ids := {}
+	for objective_definition in definition.objectives:
+		valid_objective_ids[String(objective_definition.objective_id)] = true
+
+	var saved_objectives: Array = raw_objectives
+	for index in range(saved_objectives.size()):
+		var saved_value = saved_objectives[index]
+		if not (saved_value is Dictionary):
+			QuestResultData.add_error(result, "objectives[%d] must be a Dictionary for quest_id: %s" % [index, quest_id])
+			continue
+		var saved_objective: Dictionary = saved_value
+		var raw_objective_id = saved_objective.get("objective_id", "")
+		if typeof(raw_objective_id) != TYPE_STRING and typeof(raw_objective_id) != TYPE_STRING_NAME:
+			QuestResultData.add_error(result, "objectives[%d].objective_id must be a string for quest_id: %s" % [index, quest_id])
+			continue
+		var objective_id := String(raw_objective_id)
+		var normalized := objective_id.strip_edges()
+		if normalized.is_empty():
+			QuestResultData.add_error(result, "objectives[%d].objective_id must be non-empty for quest_id: %s" % [index, quest_id])
+			continue
+		if normalized != objective_id:
+			QuestResultData.add_error(result, "objectives[%d].objective_id must not contain leading or trailing whitespace for quest_id: %s" % [index, quest_id])
+			continue
+		if seen_objectives.has(normalized):
+			QuestResultData.add_error(result, "Duplicate objective_id: %s" % normalized)
+			continue
+		seen_objectives[normalized] = true
+		if not valid_objective_ids.has(normalized):
+			QuestResultData.add_error(result, "Unknown objective_id: %s" % normalized)
+			continue
+		saved_by_id[normalized] = saved_objective
+
+	var objectives: Array = []
+	for objective_definition in definition.objectives:
+		var objective_id := String(objective_definition.objective_id)
+		if saved_by_id.has(objective_id):
+			objectives.append(_parse_objective_state(saved_by_id[objective_id], objective_definition, status, result))
+		else:
+			objectives.append(_make_default_objective_entry(objective_id, objective_definition, status))
+	return {
+		"quest_id": quest_id,
+		"status": status,
+		"data": quest_data,
+		"objectives": objectives,
+	}
+
+
+func _parse_objective_state(saved_objective: Dictionary, definition: Resource, parent_status: String, result: Dictionary) -> Dictionary:
+	var objective_id := String(definition.objective_id)
+	var status := _parse_status(saved_objective.get("status", ""), [QuestConstantsData.OBJECTIVE_INACTIVE, QuestConstantsData.OBJECTIVE_ACTIVE, QuestConstantsData.OBJECTIVE_COMPLETED], "objective status", result)
+	var progress := _parse_integer_field(saved_objective.get("progress", null), "progress", result)
+	var target_amount := int(definition.target_amount)
+	if progress < 0:
+		QuestResultData.add_error(result, "progress must be zero or greater for objective_id: %s" % objective_id)
+	if progress > target_amount:
+		QuestResultData.add_error(result, "progress must not exceed target_amount for objective_id: %s" % objective_id)
+	if status == QuestConstantsData.OBJECTIVE_INACTIVE and progress != 0:
+		QuestResultData.add_error(result, "inactive objective progress must be zero for objective_id: %s" % objective_id)
+	if status == QuestConstantsData.OBJECTIVE_ACTIVE:
+		if parent_status == QuestConstantsData.STATUS_INACTIVE:
+			QuestResultData.add_error(result, "inactive quest cannot contain active objectives")
+		if progress >= target_amount:
+			QuestResultData.add_error(result, "active objective progress must be below target_amount for objective_id: %s" % objective_id)
+	if status == QuestConstantsData.OBJECTIVE_COMPLETED and progress != target_amount:
+		QuestResultData.add_error(result, "completed objective progress must equal target_amount for objective_id: %s" % objective_id)
+
+	var raw_data = saved_objective.get("data", {})
+	var objective_data := {}
+	if not (raw_data is Dictionary):
+		QuestResultData.add_error(result, "objective data must be a Dictionary for objective_id: %s" % objective_id)
+	elif not _is_json_compatible(raw_data):
+		QuestResultData.add_error(result, "data must be JSON-compatible for objective_id: %s" % objective_id)
+	else:
+		objective_data = (raw_data as Dictionary).duplicate(true)
+
+	return {
+		"objective_id": objective_id,
+		"status": status,
+		"progress": progress,
+		"target_amount": target_amount,
+		"data": objective_data,
+	}
+
+
+func _parse_status(value: Variant, allowed: Array, field_name: String, result: Dictionary) -> String:
+	if typeof(value) != TYPE_STRING and typeof(value) != TYPE_STRING_NAME:
+		QuestResultData.add_error(result, "%s must be a string" % field_name)
+		return ""
+	var status := String(value)
+	if not allowed.has(status):
+		QuestResultData.add_error(result, "%s is invalid: %s" % [field_name, status])
+	return status
+
+
+func _parse_integer_field(value: Variant, field_name: String, result: Dictionary) -> int:
+	if typeof(value) == TYPE_INT:
+		return int(value)
+	if typeof(value) == TYPE_FLOAT:
+		var float_value := float(value)
+		if not is_nan(float_value) and not is_inf(float_value) and float_value == floor(float_value):
+			return int(float_value)
+	QuestResultData.add_error(result, "%s must be an integer" % field_name)
+	return 0
 
 
 func _validate_database(result: Dictionary) -> bool:
