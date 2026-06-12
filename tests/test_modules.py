@@ -695,6 +695,8 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn("godot-playwright module add /tmp/agent-game abilities --demo", readme)
         self.assertIn("godot-playwright module add /tmp/agent-game quests", readme)
         self.assertIn("godot-playwright module add /tmp/agent-game quests --demo", readme)
+        self.assertIn("godot-playwright module add /tmp/agent-game gameplay_events", readme)
+        self.assertIn("godot-playwright module add /tmp/agent-game gameplay_events --demo", readme)
 
     def test_effects_docs_exist_for_humans_and_agents(self) -> None:
         source_root = default_module_roots()[0] / "effects"
@@ -757,6 +759,29 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn("Prefer explicit progression", agent)
         self.assertIn("JSON-compatible", agent)
         self.assertIn("Do not add hidden dependencies", agent)
+
+    def test_gameplay_events_docs_describe_boundaries(self) -> None:
+        source_root = default_module_roots()[0]
+        readme = (source_root / "gameplay_events" / "README.md").read_text(encoding="utf-8")
+        agent = (source_root / "gameplay_events" / "AGENT.md").read_text(encoding="utf-8")
+
+        self.assertIn("godot-playwright module add /path/to/project gameplay_events", readme)
+        self.assertIn("godot-playwright module add /path/to/project gameplay_events --demo", readme)
+        self.assertIn("EventDefinition", readme)
+        self.assertIn("EventDatabase", readme)
+        self.assertIn("GameplayEventBus", readme)
+        self.assertIn("emit_event", readme)
+        self.assertIn("queue_event", readme)
+        self.assertIn("flush_events", readme)
+        self.assertIn("subscribe", readme)
+        self.assertIn("record_history", readme)
+        self.assertIn("save_history", readme)
+        self.assertIn("does not directly integrate", readme)
+        self.assertIn("JSON-compatible", agent)
+        self.assertIn("Do not store engine objects", agent)
+        self.assertIn("Do not assume a global Autoload", agent)
+        self.assertIn("queue_event", agent)
+        self.assertIn("explicit project code", agent)
 
     def test_save_service_rejects_non_finite_float_states(self) -> None:
         source_root = default_module_roots()[0]

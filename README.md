@@ -154,6 +154,8 @@ godot-playwright module add /tmp/agent-game abilities
 godot-playwright module add /tmp/agent-game abilities --demo
 godot-playwright module add /tmp/agent-game quests
 godot-playwright module add /tmp/agent-game quests --demo
+godot-playwright module add /tmp/agent-game gameplay_events
+godot-playwright module add /tmp/agent-game gameplay_events --demo
 ```
 
 The first gameplay module is `save_load`, a JSON slot save/load service. The
@@ -184,6 +186,8 @@ The `stats` module adds a reusable `StatContainer` node backed by `StatDefinitio
 The `abilities` module adds a reusable `AbilityContainer` node backed by `AbilityDefinition` and `AbilityDatabase` Resources. It supports instant action requests, cooldowns, charges, enabled state, structured activation results, JSON-compatible `get_state()` / `apply_state(data)`, and optional persistence through `save_load` when a container has a stable `save_id`. Costs are reported in activation results but are not automatically spent.
 
 The `quests` module adds a reusable `QuestLog` node backed by `QuestDefinition`, `ObjectiveDefinition`, and `QuestDatabase` Resources. It supports explicit quest start/fail/complete flow, objective progress, `all`/`any` completion policies, optional objectives, structured mutation results, JSON-compatible `get_state()` / `apply_state(data)`, and optional persistence through `save_load` when a log has a stable `save_id`. Rewards are reported in completion results but are not automatically granted.
+
+The `gameplay_events` module provides a Resource-driven event bus for explicit cross-system gameplay announcements. It supports stable `EventDefinition` Resources, an `EventDatabase`, synchronous `emit_event()`, queued `queue_event()` / `flush_events()`, one-argument subscriptions, JSON-compatible history/state, and no direct dependency on other gameplay modules.
 
 Probe runtime startup for script errors and warning/error log diagnostics:
 
