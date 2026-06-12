@@ -1812,6 +1812,81 @@ class QuestsModuleGodotTests(unittest.TestCase):
 
 
 @unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
+class GameplayEventsModuleGodotTests(unittest.TestCase):
+    def test_installed_gameplay_events_scripts_are_valid(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Gameplay Events Parse Probe")
+            add_module(project, "gameplay_events", demo=True)
+
+            result = check_project_scripts(
+                project,
+                ["res://addons/gameplay_events", "res://scripts/gameplay_events_demo"],
+                exclude=["addons/godot_playwright/**"],
+            )
+
+        self.assertTrue(result["ok"], result["diagnostics"])
+
+    def test_installed_gameplay_events_demo_resources_are_valid(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Gameplay Events Resource Probe")
+            add_module(project, "gameplay_events", demo=True)
+
+            result = check_project_resources(
+                project,
+                ["res://scenes/gameplay_events_demo", "res://resources/gameplay_events_demo"],
+                exclude=["addons/godot_playwright/**"],
+            )
+
+        self.assertTrue(result["ok"], result["diagnostics"])
+
+    def test_gameplay_events_demo_runs_in_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Gameplay Events Runtime Probe")
+            add_module(project, "gameplay_events", demo=True)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/gameplay_events_demo/gameplay_events_demo.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#GameplayEventsDemo").call("run_gameplay_events_demo")
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["received_count"], 1)
+        self.assertEqual(result["received_item_id"], "coin")
+        self.assertEqual(result["received_quantity"], 1)
+        self.assertEqual(result["flushed_count"], 2)
+        self.assertEqual(result["limited_flush_count"], 1)
+        self.assertEqual(result["history_count"], 4)
+        self.assertEqual(result["restored_queue_count"], 1)
+        self.assertEqual(result["restored_history_count"], 4)
+
+    def test_installed_gameplay_events_demo_test_runs_without_main_scene_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Gameplay Events Demo Test Probe")
+            add_module(project, "gameplay_events", demo=True)
+
+            report = run_tests(
+                project,
+                [project / "tests" / "gameplay_events_demo"],
+                artifacts_dir=root / "artifacts",
+                trace="off",
+                timeout=30,
+            )
+
+        self.assertEqual(report["failed"], 0, report["tests"])
+        self.assertEqual(report["passed"], 1)
+
+
+@unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
 class StatsModuleGodotTests(unittest.TestCase):
     def test_installed_stats_scripts_parse(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
