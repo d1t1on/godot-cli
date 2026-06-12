@@ -24,6 +24,16 @@ var _history: Array[Dictionary] = []
 var _subscribers_by_event_id: Dictionary = {}
 
 
+func _enter_tree() -> void:
+	if not String(save_id).is_empty():
+		add_to_group(GameplayEventConstantsData.SAVE_GROUP)
+
+
+func _process(delta: float) -> void:
+	if auto_flush:
+		flush_events(auto_flush_limit)
+
+
 func emit_event(event_id: String, payload: Dictionary = {}) -> Dictionary:
 	var normalized := event_id.strip_edges()
 	var result := GameplayEventResultData.make(true, normalized)
@@ -32,6 +42,56 @@ func emit_event(event_id: String, payload: Dictionary = {}) -> Dictionary:
 		event_failed.emit(normalized, result)
 		return result
 	return _dispatch_event(event, result)
+
+
+func queue_event(event_id: String, payload: Dictionary = {}) -> Dictionary:
+	var normalized := event_id.strip_edges()
+	var result := GameplayEventResultData.make(true, normalized)
+	var event := _make_event(normalized, payload, true, result)
+	if not bool(result.get("ok", false)):
+		event_failed.emit(normalized, result)
+		return result
+	_queue.append(_copy_event(event))
+	result["event"] = _copy_event(event)
+	var changed_event := _make_result_event(GameplayEventConstantsData.EVENT_QUEUED, event)
+	GameplayEventResultData.add_event(result, changed_event)
+	event_queued.emit(normalized, _copy_event(event), result)
+	events_changed.emit(changed_event)
+	return result
+
+
+func flush_events(limit: int = 0) -> Array[Dictionary]:
+	var results: Array[Dictionary] = []
+	if limit < 0:
+		var failed := GameplayEventResultData.make(false)
+		GameplayEventResultData.add_error(failed, "limit must be zero or greater")
+		event_failed.emit("", failed)
+		return results
+
+	var remaining := limit
+	while not _queue.is_empty() and (limit == 0 or remaining > 0):
+		var event := _queue.pop_front()
+		var result := GameplayEventResultData.make(true, String(event.get("event_id", "")))
+		result["payload"] = (event.get("payload", {}) as Dictionary).duplicate(true)
+		result["event"] = _copy_event(event)
+		results.append(_dispatch_event(event, result))
+		if limit > 0:
+			remaining -= 1
+
+	var emitted_events: Array = []
+	for result in results:
+		if bool(result.get("ok", false)) and result.get("event", {}) is Dictionary:
+			emitted_events.append((result.get("event", {}) as Dictionary).duplicate(true))
+	queue_flushed.emit(emitted_events)
+	return results
+
+
+func clear_queue() -> void:
+	if _queue.is_empty():
+		return
+	_queue.clear()
+	var changed_event := _make_result_event(GameplayEventConstantsData.EVENT_QUEUE_CLEARED, {})
+	events_changed.emit(changed_event)
 
 
 func subscribe(event_id: String, target: Object, method: StringName) -> Dictionary:
@@ -103,6 +163,79 @@ func get_event_ids() -> Array[String]:
 	var ids: Array[String] = []
 	ids.assign(database.call("get_event_ids"))
 	return ids
+
+
+func get_history(limit: int = 0) -> Array:
+	if limit == 0:
+		return _copy_event_array(_history)
+	if limit < 0:
+		return []
+	var start_index := maxi(0, _history.size() - limit)
+	var copied: Array = []
+	for index in range(start_index, _history.size()):
+		copied.append(_copy_event(_history[index]))
+	return copied
+
+
+func clear_history() -> void:
+	if _history.is_empty():
+		return
+	_history.clear()
+	var changed_event := _make_result_event(GameplayEventConstantsData.EVENT_HISTORY_CLEARED, {})
+	events_changed.emit(changed_event)
+
+
+func get_state() -> Dictionary:
+	return {
+		"schema_version": GameplayEventConstantsData.SCHEMA_VERSION,
+		"sequence": _sequence,
+		"queue": _copy_event_array(_queue),
+		"history": _copy_event_array(_history) if save_history else [],
+	}
+
+
+func apply_state(data: Dictionary) -> Dictionary:
+	var result := GameplayEventResultData.make(true)
+	var raw_schema_version = data.get("schema_version", null)
+	if typeof(raw_schema_version) != TYPE_INT:
+		GameplayEventResultData.add_error(result, "schema_version must be an integer")
+
+	var next_sequence := _parse_integer_field(data.get("sequence", null), "sequence", result)
+	if next_sequence < 0:
+		GameplayEventResultData.add_error(result, "sequence must be zero or greater")
+
+	var next_queue := _parse_event_array(data.get("queue", []), "queue", result)
+	var next_history := _parse_event_array(data.get("history", []), "history", result)
+	if not bool(result.get("ok", false)):
+		return result
+
+	_sequence = next_sequence
+	_queue = next_queue
+	_history = next_history
+	var changed_event := {
+		"ok": true,
+		"type": GameplayEventConstantsData.EVENT_STATE_APPLIED,
+		"event_id": "",
+		"warnings": [],
+		"errors": [],
+	}
+	GameplayEventResultData.add_event(result, changed_event)
+	events_changed.emit(changed_event)
+	return result
+
+
+func get_save_id() -> String:
+	return String(save_id)
+
+
+func save_state() -> Dictionary:
+	return get_state()
+
+
+func load_state(data: Dictionary) -> void:
+	var result := apply_state(data)
+	if not bool(result.get("ok", false)):
+		push_warning("GameplayEventBus load_state failed: %s" % ", ".join(PackedStringArray(result.get("errors", []))))
 
 
 func _validate_event_id(result: Dictionary, event_id: String) -> bool:
@@ -207,6 +340,78 @@ func _make_result_event(type: String, event: Dictionary) -> Dictionary:
 
 func _copy_event(event: Dictionary) -> Dictionary:
 	return event.duplicate(true)
+
+
+func _copy_event_array(events: Array) -> Array:
+	var copied: Array = []
+	for event in events:
+		copied.append(_copy_event(event))
+	return copied
+
+
+func _parse_event_array(value: Variant, field_name: String, result: Dictionary) -> Array[Dictionary]:
+	var parsed: Array[Dictionary] = []
+	if not value is Array:
+		GameplayEventResultData.add_error(result, "%s must be an array" % field_name)
+		return parsed
+	var raw_events: Array = value
+	for index in range(raw_events.size()):
+		var parsed_event := _parse_event_state(raw_events[index], "%s[%d]" % [field_name, index], result)
+		if not parsed_event.is_empty():
+			parsed.append(parsed_event)
+	return parsed
+
+
+func _parse_event_state(value: Variant, field_name: String, result: Dictionary) -> Dictionary:
+	if not value is Dictionary:
+		GameplayEventResultData.add_error(result, "%s must be a dictionary" % field_name)
+		return {}
+	var raw_event: Dictionary = value
+	var event_id := String(raw_event.get("event_id", "")).strip_edges()
+	var field_result := GameplayEventResultData.make(true, event_id)
+	if not _validate_event_id(field_result, event_id):
+		for error in field_result.get("errors", []):
+			GameplayEventResultData.add_error(result, "%s.%s" % [field_name, String(error)])
+		return {}
+
+	var raw_payload = raw_event.get("payload", null)
+	if not raw_payload is Dictionary:
+		GameplayEventResultData.add_error(result, "%s.payload must be a dictionary" % field_name)
+	elif not _is_json_compatible(raw_payload):
+		GameplayEventResultData.add_error(result, "%s.payload must be JSON-compatible" % field_name)
+
+	var sequence := _parse_integer_field(raw_event.get("sequence", null), "%s.sequence" % field_name, result)
+	if sequence < 0:
+		GameplayEventResultData.add_error(result, "%s.sequence must be zero or greater" % field_name)
+
+	var raw_queued = raw_event.get("queued", null)
+	if typeof(raw_queued) != TYPE_BOOL:
+		GameplayEventResultData.add_error(result, "%s.queued must be a bool" % field_name)
+
+	var timestamp_msec := _parse_integer_field(raw_event.get("timestamp_msec", null), "%s.timestamp_msec" % field_name, result)
+	if timestamp_msec < 0:
+		GameplayEventResultData.add_error(result, "%s.timestamp_msec must be zero or greater" % field_name)
+
+	if not bool(result.get("ok", false)):
+		return {}
+	return {
+		"event_id": event_id,
+		"payload": (raw_payload as Dictionary).duplicate(true),
+		"sequence": sequence,
+		"queued": bool(raw_queued),
+		"timestamp_msec": timestamp_msec,
+	}
+
+
+func _parse_integer_field(value: Variant, field_name: String, result: Dictionary) -> int:
+	if typeof(value) == TYPE_INT:
+		return int(value)
+	if typeof(value) == TYPE_FLOAT:
+		var float_value := float(value)
+		if float_value == floor(float_value):
+			return int(float_value)
+	GameplayEventResultData.add_error(result, "%s must be an integer" % field_name)
+	return 0
 
 
 func _is_json_compatible(value: Variant, seen: Array = []) -> bool:
