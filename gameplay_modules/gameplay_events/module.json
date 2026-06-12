@@ -1,0 +1,17 @@
+{
+  "name": "gameplay_events",
+  "version": "0.1.0",
+  "display_name": "Gameplay Events",
+  "description": "Resource-driven gameplay event bus for Godot projects.",
+  "godot_version": ">=4.6",
+  "copy": [
+    {"from": "addons/gameplay_events", "to": "addons/gameplay_events"}
+  ],
+  "autoloads": [],
+  "validation": {
+    "commands": [
+      "godot-playwright check-scripts /path/to/project res://addons/gameplay_events --exclude addons/godot_playwright/**",
+      "godot-playwright check-resources /path/to/project res://addons/gameplay_events --exclude addons/godot_playwright/**"
+    ]
+  }
+}

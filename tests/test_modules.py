@@ -89,6 +89,13 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertEqual(quests["godot_version"], ">=4.6")
         self.assertEqual(quests["autoloads"], [])
 
+    def test_repository_gameplay_events_module_is_discoverable(self) -> None:
+        modules = list_modules()
+        gameplay_events = next(module for module in modules if module["name"] == "gameplay_events")
+        self.assertEqual(gameplay_events["version"], "0.1.0")
+        self.assertEqual(gameplay_events["godot_version"], ">=4.6")
+        self.assertEqual(gameplay_events["autoloads"], [])
+
     def test_add_inventory_module_copies_files_without_autoload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -197,6 +204,34 @@ class ModuleInstallerUnitTests(unittest.TestCase):
             copied_targets = {entry["target"] for entry in report["copied"]}
             self.assertTrue(
                 {f"res://addons/quests/{script_name}" for script_name in expected_scripts}.issubset(copied_targets),
+                copied_targets,
+            )
+
+    def test_add_gameplay_events_module_copies_files_without_autoload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = _write_project(root / "project")
+
+            report = add_module(project, "gameplay_events")
+
+            self.assertTrue(report["ok"], report)
+            self.assertFalse(report["demo"])
+            self.assertEqual(report["module"], "gameplay_events")
+            self.assertEqual(report["autoloads"], [])
+            expected_scripts = {
+                "gameplay_event_constants.gd",
+                "gameplay_event_result.gd",
+                "event_definition.gd",
+                "event_database.gd",
+                "gameplay_event_bus.gd",
+            }
+            for script_name in expected_scripts:
+                self.assertTrue((project / "addons" / "gameplay_events" / script_name).exists(), script_name)
+            project_text = (project / "project.godot").read_text(encoding="utf-8")
+            self.assertNotIn("GameplayEventService", project_text)
+            copied_targets = {entry["target"] for entry in report["copied"]}
+            self.assertTrue(
+                {f"res://addons/gameplay_events/{script_name}" for script_name in expected_scripts}.issubset(copied_targets),
                 copied_targets,
             )
 
