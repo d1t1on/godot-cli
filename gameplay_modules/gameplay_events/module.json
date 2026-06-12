@@ -8,6 +8,14 @@
     {"from": "addons/gameplay_events", "to": "addons/gameplay_events"}
   ],
   "autoloads": [],
+  "demo": {
+    "copy": [
+      {"from": "demo/scenes", "to": "scenes/gameplay_events_demo"},
+      {"from": "demo/scripts", "to": "scripts/gameplay_events_demo"},
+      {"from": "demo/resources", "to": "resources/gameplay_events_demo"},
+      {"from": "tests", "to": "tests/gameplay_events_demo"}
+    ]
+  },
   "validation": {
     "commands": [
       "godot-playwright check-scripts /path/to/project res://addons/gameplay_events --exclude addons/godot_playwright/**",

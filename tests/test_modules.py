@@ -380,6 +380,20 @@ class ModuleInstallerUnitTests(unittest.TestCase):
             self.assertTrue((project / "resources" / "quests_demo" / "quest_database.tres").exists())
             self.assertTrue((project / "tests" / "quests_demo" / "test_quests_demo.py").exists())
 
+    def test_add_gameplay_events_module_with_demo_copies_demo_assets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = _write_project(root / "project")
+
+            report = add_module(project, "gameplay_events", demo=True)
+
+            self.assertTrue(report["ok"], report)
+            self.assertTrue(report["demo"])
+            self.assertTrue((project / "scenes" / "gameplay_events_demo" / "gameplay_events_demo.tscn").exists())
+            self.assertTrue((project / "scripts" / "gameplay_events_demo" / "gameplay_events_demo.gd").exists())
+            self.assertTrue((project / "resources" / "gameplay_events_demo" / "event_database.tres").exists())
+            self.assertTrue((project / "tests" / "gameplay_events_demo" / "test_gameplay_events_demo.py").exists())
+
     def test_packaged_save_load_module_mirror_exists(self) -> None:
         bundled_root = default_module_roots()[1]
         manifest = load_module_manifest("save_load", module_root=bundled_root)
