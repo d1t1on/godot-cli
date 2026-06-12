@@ -827,6 +827,51 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn("static func add_error", result)
         self.assertIn("const SCHEMA_VERSION: int = 1", constants)
 
+    def test_gameplay_events_source_defines_resource_helpers(self) -> None:
+        source_root = default_module_roots()[0]
+        events_root = source_root / "gameplay_events" / "addons" / "gameplay_events"
+        definition = (events_root / "event_definition.gd").read_text(encoding="utf-8")
+        database = (events_root / "event_database.gd").read_text(encoding="utf-8")
+        result = (events_root / "gameplay_event_result.gd").read_text(encoding="utf-8")
+        constants = (events_root / "gameplay_event_constants.gd").read_text(encoding="utf-8")
+
+        self.assertIn("class_name EventDefinition", definition)
+        self.assertIn("@export var event_id: StringName", definition)
+        self.assertIn("@export var display_name: String", definition)
+        self.assertIn("@export_multiline var description: String", definition)
+        self.assertIn("@export var tags: Array[StringName] = []", definition)
+        self.assertIn("@export var default_payload: Dictionary = {}", definition)
+        self.assertIn("@export var record_by_default: bool = true", definition)
+        self.assertIn("class_name EventDatabase", database)
+        self.assertIn('EventDefinitionData := preload("res://addons/gameplay_events/event_definition.gd")', database)
+        self.assertIn('GameplayEventResultData := preload("res://addons/gameplay_events/gameplay_event_result.gd")', database)
+        self.assertIn("@export var events: Array[Resource] = []", database)
+        self.assertIn("func get_event(event_id: String) -> Resource", database)
+        self.assertIn("func has_event(event_id: String) -> bool", database)
+        self.assertIn("func get_event_ids() -> Array[String]", database)
+        self.assertIn("func get_events() -> Array", database)
+        self.assertIn("func validate() -> Dictionary", database)
+        self.assertIn("events[%d] is null", database)
+        self.assertIn("must be an EventDefinition", database)
+        self.assertIn("event_id must be non-empty", database)
+        self.assertIn("must not contain leading or trailing whitespace", database)
+        self.assertIn("Duplicate event_id", database)
+        self.assertIn("default_payload must be JSON-compatible", database)
+        self.assertIn("_is_json_compatible", database)
+        self.assertIn("class_name GameplayEventResult", result)
+        self.assertIn('"event_id": event_id', result)
+        self.assertIn('"payload": {}', result)
+        self.assertIn('"event": {}', result)
+        self.assertIn('"subscriber_count": 0', result)
+        self.assertIn('"events": []', result)
+        self.assertIn("static func add_event", result)
+        self.assertIn("static func add_warning", result)
+        self.assertIn("static func add_error", result)
+        self.assertIn("const SCHEMA_VERSION: int = 1", constants)
+        self.assertIn('const EVENT_EMITTED: String = "event_emitted"', constants)
+        self.assertIn('const EVENT_QUEUED: String = "event_queued"', constants)
+        self.assertIn('const EVENT_FAILED: String = "event_failed"', constants)
+
     def test_quests_source_defines_resource_helpers(self) -> None:
         source_root = default_module_roots()[0]
         quests_root = source_root / "quests" / "addons" / "quests"
