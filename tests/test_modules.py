@@ -975,6 +975,37 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn("_is_completion_policy_satisfied", quest_log)
         self.assertIn("_maybe_auto_complete_quest", quest_log)
 
+    def test_gameplay_events_source_defines_bus_api(self) -> None:
+        source_root = default_module_roots()[0]
+        bus = (source_root / "gameplay_events" / "addons" / "gameplay_events" / "gameplay_event_bus.gd").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("class_name GameplayEventBus", bus)
+        self.assertIn("@export var database: Resource", bus)
+        self.assertIn("@export var save_id: StringName", bus)
+        self.assertIn("@export var record_history: bool = true", bus)
+        self.assertIn("@export_range(0, 10000, 1) var max_history: int = 100", bus)
+        self.assertIn("@export var save_history: bool = false", bus)
+        self.assertIn("@export var auto_flush: bool = false", bus)
+        self.assertIn("@export_range(0, 10000, 1) var auto_flush_limit: int = 0", bus)
+        self.assertIn("signal event_emitted", bus)
+        self.assertIn("signal event_queued", bus)
+        self.assertIn("signal event_failed", bus)
+        self.assertIn("signal queue_flushed", bus)
+        self.assertIn("signal events_changed", bus)
+        self.assertIn("func emit_event(event_id: String, payload: Dictionary = {}) -> Dictionary", bus)
+        self.assertIn("func subscribe(event_id: String, target: Object, method: StringName) -> Dictionary", bus)
+        self.assertIn("func unsubscribe(event_id: String, target: Object, method: StringName) -> Dictionary", bus)
+        self.assertIn("func clear_subscribers(event_id: String = \"\") -> void", bus)
+        self.assertIn("func has_event(event_id: String) -> bool", bus)
+        self.assertIn("func get_event_definition(event_id: String) -> Resource", bus)
+        self.assertIn("func get_event_ids() -> Array[String]", bus)
+        self.assertIn("_subscribers_by_event_id", bus)
+        self.assertIn("_make_event", bus)
+        self.assertIn("_dispatch_event", bus)
+        self.assertIn("_is_json_compatible", bus)
+
     def test_abilities_source_defines_container_api(self) -> None:
         source_root = default_module_roots()[0]
         container = (source_root / "abilities" / "addons" / "abilities" / "ability_container.gd").read_text(
