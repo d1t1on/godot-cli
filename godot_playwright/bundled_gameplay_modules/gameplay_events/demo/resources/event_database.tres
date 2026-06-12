@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="EventDatabase" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://addons/gameplay_events/event_database.gd" id="1_database_script"]
+[ext_resource type="Resource" path="res://resources/gameplay_events_demo/item_collected.tres" id="2_item_collected"]
+[ext_resource type="Resource" path="res://resources/gameplay_events_demo/door_opened.tres" id="3_door_opened"]
+[ext_resource type="Resource" path="res://resources/gameplay_events_demo/quest_progressed.tres" id="4_quest_progressed"]
+
+[resource]
+script = ExtResource("1_database_script")
+events = Array[Resource]([ExtResource("2_item_collected"), ExtResource("3_door_opened"), ExtResource("4_quest_progressed")])

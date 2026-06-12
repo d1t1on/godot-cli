@@ -66,6 +66,12 @@ godot_playwright = [
   "bundled_gameplay_modules/quests/demo/scripts/*",
   "bundled_gameplay_modules/quests/demo/resources/*",
   "bundled_gameplay_modules/quests/tests/*",
+  "bundled_gameplay_modules/gameplay_events/*",
+  "bundled_gameplay_modules/gameplay_events/addons/gameplay_events/*",
+  "bundled_gameplay_modules/gameplay_events/demo/scenes/*",
+  "bundled_gameplay_modules/gameplay_events/demo/scripts/*",
+  "bundled_gameplay_modules/gameplay_events/demo/resources/*",
+  "bundled_gameplay_modules/gameplay_events/tests/*",
 ]
 
 [tool.pytest.ini_options]

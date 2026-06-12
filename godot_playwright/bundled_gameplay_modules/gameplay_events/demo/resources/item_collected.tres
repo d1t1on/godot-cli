@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="EventDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/gameplay_events/event_definition.gd" id="1_event_script"]
+
+[resource]
+script = ExtResource("1_event_script")
+event_id = &"item_collected"
+display_name = "Item Collected"
+description = "Demo event emitted when the player collects an item."
+tags = Array[StringName]([&"demo", &"inventory"])
+default_payload = {"quantity": 1}
+record_by_default = true

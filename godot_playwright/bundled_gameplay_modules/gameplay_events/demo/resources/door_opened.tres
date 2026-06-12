@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="EventDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/gameplay_events/event_definition.gd" id="1_event_script"]
+
+[resource]
+script = ExtResource("1_event_script")
+event_id = &"door_opened"
+display_name = "Door Opened"
+description = "Demo event queued when a door opens."
+tags = Array[StringName]([&"demo", &"interaction"])
+default_payload = {"locked": false}
+record_by_default = true
