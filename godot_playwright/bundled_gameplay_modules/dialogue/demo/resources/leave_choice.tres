@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="DialogueChoiceDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/dialogue/dialogue_choice_definition.gd" id="1_choice_script"]
+
+[resource]
+script = ExtResource("1_choice_script")
+choice_id = &"leave"
+display_name = "Never mind"
+next_line_id = &"guard_bye"

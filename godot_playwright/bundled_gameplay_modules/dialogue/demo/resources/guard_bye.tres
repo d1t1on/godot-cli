@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="DialogueLineDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/dialogue/dialogue_line_definition.gd" id="1_line_script"]
+
+[resource]
+script = ExtResource("1_line_script")
+line_id = &"guard_bye"
+speaker = "Guard"
+text = "Move along, then."

@@ -96,6 +96,13 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertEqual(gameplay_events["godot_version"], ">=4.6")
         self.assertEqual(gameplay_events["autoloads"], [])
 
+    def test_repository_dialogue_module_is_discoverable(self) -> None:
+        modules = list_modules()
+        dialogue = next(module for module in modules if module["name"] == "dialogue")
+        self.assertEqual(dialogue["version"], "0.1.0")
+        self.assertEqual(dialogue["godot_version"], ">=4.6")
+        self.assertEqual(dialogue["autoloads"], [])
+
     def test_add_inventory_module_copies_files_without_autoload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -394,6 +401,50 @@ class ModuleInstallerUnitTests(unittest.TestCase):
             self.assertTrue((project / "resources" / "gameplay_events_demo" / "event_database.tres").exists())
             self.assertTrue((project / "tests" / "gameplay_events_demo" / "test_gameplay_events_demo.py").exists())
 
+    def test_add_dialogue_module_copies_files_without_autoload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = _write_project(root / "project")
+
+            report = add_module(project, "dialogue")
+
+            self.assertTrue(report["ok"], report)
+            self.assertFalse(report["demo"])
+            self.assertEqual(report["module"], "dialogue")
+            self.assertEqual(report["autoloads"], [])
+            expected_scripts = {
+                "dialogue_constants.gd",
+                "dialogue_result.gd",
+                "dialogue_choice_definition.gd",
+                "dialogue_line_definition.gd",
+                "dialogue_definition.gd",
+                "dialogue_database.gd",
+                "dialogue_runner.gd",
+            }
+            for script_name in expected_scripts:
+                self.assertTrue((project / "addons" / "dialogue" / script_name).exists(), script_name)
+            project_text = (project / "project.godot").read_text(encoding="utf-8")
+            self.assertNotIn("DialogueService", project_text)
+            copied_targets = {entry["target"] for entry in report["copied"]}
+            self.assertTrue(
+                {f"res://addons/dialogue/{script_name}" for script_name in expected_scripts}.issubset(copied_targets),
+                copied_targets,
+            )
+
+    def test_add_dialogue_module_with_demo_copies_demo_assets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = _write_project(root / "project")
+
+            report = add_module(project, "dialogue", demo=True)
+
+            self.assertTrue(report["ok"], report)
+            self.assertTrue(report["demo"])
+            self.assertTrue((project / "scenes" / "dialogue_demo" / "dialogue_demo.tscn").exists())
+            self.assertTrue((project / "scripts" / "dialogue_demo" / "dialogue_demo.gd").exists())
+            self.assertTrue((project / "resources" / "dialogue_demo" / "dialogue_database.tres").exists())
+            self.assertTrue((project / "tests" / "dialogue_demo" / "test_dialogue_demo.py").exists())
+
     def test_packaged_save_load_module_mirror_exists(self) -> None:
         bundled_root = default_module_roots()[1]
         manifest = load_module_manifest("save_load", module_root=bundled_root)
@@ -453,6 +504,13 @@ class ModuleInstallerUnitTests(unittest.TestCase):
             (bundled_root / "gameplay_events" / "addons" / "gameplay_events" / "gameplay_event_bus.gd").exists()
         )
 
+    def test_packaged_dialogue_module_mirror_exists(self) -> None:
+        bundled_root = default_module_roots()[1]
+        manifest = load_module_manifest("dialogue", module_root=bundled_root)
+        self.assertEqual(manifest["name"], "dialogue")
+        self.assertEqual(manifest["autoloads"], [])
+        self.assertTrue((bundled_root / "dialogue" / "addons" / "dialogue" / "dialogue_runner.gd").exists())
+
     def test_pyproject_includes_bundled_gameplay_module_data(self) -> None:
         pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn('"bundled_addons/godot_playwright/*"', pyproject)
@@ -507,6 +565,12 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn('"bundled_gameplay_modules/gameplay_events/demo/scripts/*"', pyproject)
         self.assertIn('"bundled_gameplay_modules/gameplay_events/demo/resources/*"', pyproject)
         self.assertIn('"bundled_gameplay_modules/gameplay_events/tests/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/dialogue/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/dialogue/addons/dialogue/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/dialogue/demo/scenes/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/dialogue/demo/scripts/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/dialogue/demo/resources/*"', pyproject)
+        self.assertIn('"bundled_gameplay_modules/dialogue/tests/*"', pyproject)
 
     def test_source_and_packaged_save_load_trees_are_identical(self) -> None:
         source_root, bundled_root = default_module_roots()
@@ -632,6 +696,21 @@ class ModuleInstallerUnitTests(unittest.TestCase):
                 relative_path.as_posix(),
             )
 
+    def test_source_and_packaged_dialogue_trees_are_identical(self) -> None:
+        source_root, bundled_root = default_module_roots()
+        source = source_root / "dialogue"
+        bundled = bundled_root / "dialogue"
+        source_files = sorted(path.relative_to(source) for path in source.rglob("*") if path.is_file())
+        bundled_files = sorted(path.relative_to(bundled) for path in bundled.rglob("*") if path.is_file())
+
+        self.assertEqual([path.as_posix() for path in source_files], [path.as_posix() for path in bundled_files])
+        for relative_path in source_files:
+            self.assertEqual(
+                (source / relative_path).read_bytes(),
+                (bundled / relative_path).read_bytes(),
+                relative_path.as_posix(),
+            )
+
     def test_save_load_docs_exist_for_humans_and_agents(self) -> None:
         source_root = default_module_roots()[0] / "save_load"
         bundled_root = default_module_roots()[1] / "save_load"
@@ -727,6 +806,8 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn("godot-playwright module add /tmp/agent-game quests --demo", readme)
         self.assertIn("godot-playwright module add /tmp/agent-game gameplay_events", readme)
         self.assertIn("godot-playwright module add /tmp/agent-game gameplay_events --demo", readme)
+        self.assertIn("godot-playwright module add /tmp/agent-game dialogue", readme)
+        self.assertIn("godot-playwright module add /tmp/agent-game dialogue --demo", readme)
 
     def test_effects_docs_exist_for_humans_and_agents(self) -> None:
         source_root = default_module_roots()[0] / "effects"
@@ -812,6 +893,21 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn("Do not assume a global Autoload", agent)
         self.assertIn("queue_event", agent)
         self.assertIn("explicit project code", agent)
+
+    def test_dialogue_docs_exist_for_humans_and_agents(self) -> None:
+        source_root = default_module_roots()[0] / "dialogue"
+        bundled_root = default_module_roots()[1] / "dialogue"
+        for root in (source_root, bundled_root):
+            readme = (root / "README.md").read_text(encoding="utf-8")
+            agent = (root / "AGENT.md").read_text(encoding="utf-8")
+            self.assertIn("godot-playwright module add /path/to/project dialogue", readme)
+            self.assertIn("DialogueRunner", readme)
+            self.assertIn("DialogueDefinition", readme)
+            self.assertIn("save_load", readme)
+            self.assertIn("dialogue_id", agent)
+            self.assertIn("Resource", agent)
+            self.assertIn("SaveService", agent)
+            self.assertIn("JSON-compatible", agent)
 
     def test_save_service_rejects_non_finite_float_states(self) -> None:
         source_root = default_module_roots()[0]
@@ -940,6 +1036,123 @@ class ModuleInstallerUnitTests(unittest.TestCase):
         self.assertIn('const EVENT_EMITTED: String = "event_emitted"', constants)
         self.assertIn('const EVENT_QUEUED: String = "event_queued"', constants)
         self.assertIn('const EVENT_FAILED: String = "event_failed"', constants)
+
+    def test_dialogue_source_defines_resource_helpers(self) -> None:
+        source_root = default_module_roots()[0]
+        dialogue_root = source_root / "dialogue" / "addons" / "dialogue"
+        choice = (dialogue_root / "dialogue_choice_definition.gd").read_text(encoding="utf-8")
+        line = (dialogue_root / "dialogue_line_definition.gd").read_text(encoding="utf-8")
+        definition = (dialogue_root / "dialogue_definition.gd").read_text(encoding="utf-8")
+        database = (dialogue_root / "dialogue_database.gd").read_text(encoding="utf-8")
+        result = (dialogue_root / "dialogue_result.gd").read_text(encoding="utf-8")
+        constants = (dialogue_root / "dialogue_constants.gd").read_text(encoding="utf-8")
+
+        self.assertIn("class_name DialogueChoiceDefinition", choice)
+        self.assertIn("@export var choice_id: StringName", choice)
+        self.assertIn("@export var display_name: String", choice)
+        self.assertIn("@export_multiline var description: String", choice)
+        self.assertIn("@export var tags: Array[StringName] = []", choice)
+        self.assertIn("@export var next_line_id: StringName", choice)
+        self.assertIn("@export var condition: String = \"\"", choice)
+        self.assertIn("@export var on_select: Dictionary = {}", choice)
+        self.assertIn("@export var apply_variables: Dictionary = {}", choice)
+        self.assertIn("@export var default_data: Dictionary = {}", choice)
+        self.assertIn("class_name DialogueLineDefinition", line)
+        self.assertIn("@export var line_id: StringName", line)
+        self.assertIn("@export var speaker: String", line)
+        self.assertIn("@export_multiline var text: String", line)
+        self.assertIn("@export var tags: Array[StringName] = []", line)
+        self.assertIn("@export var next_line_id: StringName", line)
+        self.assertIn("@export var choices: Array[Resource] = []", line)
+        self.assertIn("@export var condition: String = \"\"", line)
+        self.assertIn("@export var on_enter: Dictionary = {}", line)
+        self.assertIn("@export var on_exit: Dictionary = {}", line)
+        self.assertIn("@export var apply_variables: Dictionary = {}", line)
+        self.assertIn("@export var default_data: Dictionary = {}", line)
+        self.assertIn("class_name DialogueDefinition", definition)
+        self.assertIn("@export var dialogue_id: StringName", definition)
+        self.assertIn("@export var display_name: String", definition)
+        self.assertIn("@export_multiline var description: String", definition)
+        self.assertIn("@export var tags: Array[StringName] = []", definition)
+        self.assertIn("@export var lines: Array[Resource] = []", definition)
+        self.assertIn("@export var start_line_id: StringName", definition)
+        self.assertIn("@export var default_variables: Dictionary = {}", definition)
+        self.assertIn("@export var default_data: Dictionary = {}", definition)
+        self.assertIn("class_name DialogueDatabase", database)
+        self.assertIn('DialogueChoiceDefinitionData := preload("res://addons/dialogue/dialogue_choice_definition.gd")', database)
+        self.assertIn('DialogueLineDefinitionData := preload("res://addons/dialogue/dialogue_line_definition.gd")', database)
+        self.assertIn('DialogueDefinitionData := preload("res://addons/dialogue/dialogue_definition.gd")', database)
+        self.assertIn('DialogueResultData := preload("res://addons/dialogue/dialogue_result.gd")', database)
+        self.assertIn("@export var dialogues: Array[Resource] = []", database)
+        self.assertIn("func get_dialogue(dialogue_id: String) -> Resource", database)
+        self.assertIn("func has_dialogue(dialogue_id: String) -> bool", database)
+        self.assertIn("func get_dialogue_ids() -> Array[String]", database)
+        self.assertIn("func get_line(dialogue_id: String, line_id: String) -> Resource", database)
+        self.assertIn("func validate() -> Dictionary", database)
+        self.assertIn("dialogues[%d] is null", database)
+        self.assertIn("must be a DialogueDefinition", database)
+        self.assertIn("dialogue_id must be non-empty", database)
+        self.assertIn("Duplicate dialogue_id", database)
+        self.assertIn("start_line_id must reference an existing line_id", database)
+        self.assertIn("next_line_id references unknown line_id", database)
+        self.assertIn("_is_json_compatible", database)
+        self.assertIn("class_name DialogueResult", result)
+        self.assertIn('"dialogue_id": dialogue_id', result)
+        self.assertIn('"line_id": line_id', result)
+        self.assertIn('"choice_id": choice_id', result)
+        self.assertIn('"status": ""', result)
+        self.assertIn('"previous_status": ""', result)
+        self.assertIn('"line": {}', result)
+        self.assertIn('"choices": []', result)
+        self.assertIn('"variables": {}', result)
+        self.assertIn('"event": {}', result)
+        self.assertIn('"data": {}', result)
+        self.assertIn("static func add_event", result)
+        self.assertIn("static func add_warning", result)
+        self.assertIn("static func add_error", result)
+        self.assertIn("const SCHEMA_VERSION: int = 1", constants)
+        self.assertIn('const EVENT_DIALOGUE_STARTED: String = "dialogue_started"', constants)
+        self.assertIn('const EVENT_DIALOGUE_ENDED: String = "dialogue_ended"', constants)
+        self.assertIn('const EVENT_LINE_ENTERED: String = "line_entered"', constants)
+        self.assertIn('const EVENT_LINE_EXITED: String = "line_exited"', constants)
+        self.assertIn('const EVENT_CHOICE_SELECTED: String = "choice_selected"', constants)
+
+    def test_dialogue_source_defines_runner_api(self) -> None:
+        source_root = default_module_roots()[0]
+        runner = (source_root / "dialogue" / "addons" / "dialogue" / "dialogue_runner.gd").read_text(encoding="utf-8")
+
+        self.assertIn("class_name DialogueRunner", runner)
+        self.assertIn("@export var database: Resource", runner)
+        self.assertIn("@export var save_id: StringName", runner)
+        self.assertIn("@export var initialize_on_ready: bool = true", runner)
+        self.assertIn("signal dialogue_started", runner)
+        self.assertIn("signal dialogue_ended", runner)
+        self.assertIn("signal line_entered", runner)
+        self.assertIn("signal line_exited", runner)
+        self.assertIn("signal choice_selected", runner)
+        self.assertIn("signal dialogues_changed", runner)
+        self.assertIn("func initialize_dialogues(reset: bool = false) -> Dictionary", runner)
+        self.assertIn("func has_dialogue(dialogue_id: String) -> bool", runner)
+        self.assertIn("func start_dialogue(dialogue_id: String, data: Dictionary = {}) -> Dictionary", runner)
+        self.assertIn("func stop_dialogue(data: Dictionary = {}) -> Dictionary", runner)
+        self.assertIn("func get_current_line() -> Dictionary", runner)
+        self.assertIn("func get_choices() -> Array", runner)
+        self.assertIn("func select_choice(choice_id: String, data: Dictionary = {}) -> Dictionary", runner)
+        self.assertIn("func advance(data: Dictionary = {}) -> Dictionary", runner)
+        self.assertIn("func get_variable(key: String) -> Variant", runner)
+        self.assertIn("func set_variable(key: String, value: Variant) -> Dictionary", runner)
+        self.assertIn("func get_variables() -> Dictionary", runner)
+        self.assertIn("func get_dialogue(dialogue_id: String) -> Dictionary", runner)
+        self.assertIn("func get_state() -> Dictionary", runner)
+        self.assertIn("func apply_state(data: Dictionary) -> Dictionary", runner)
+        self.assertIn("func clear_runtime_state() -> void", runner)
+        self.assertIn("func get_save_id() -> String", runner)
+        self.assertIn("func save_state() -> Dictionary", runner)
+        self.assertIn("func load_state(data: Dictionary) -> void", runner)
+        self.assertIn("_dialogues_by_id", runner)
+        self.assertIn("_dialogue_ids", runner)
+        self.assertIn("_evaluate_condition", runner)
+        self.assertIn("_is_json_compatible", runner)
 
     def test_quests_source_defines_resource_helpers(self) -> None:
         source_root = default_module_roots()[0]
@@ -6471,6 +6684,824 @@ def _write_state_machine_runtime_probe(project: Path) -> None:
             [node name="Reentrant" type="Node" parent="StateMachine"]
             script = ExtResource("7_reentrant")
             state_id = &"reentrant"
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+@unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
+class DialogueModuleGodotTests(unittest.TestCase):
+    def test_dialogue_database_validation_runs_in_godot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Dialogue Database Probe")
+            add_module(project, "dialogue")
+            _write_dialogue_database_probe(project)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/dialogue_database_probe.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#DialogueDatabaseProbe").call("run_probe")
+
+        self.assertTrue(result["ok"], result)
+
+    def test_dialogue_runner_branching_runs_in_godot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Dialogue Runner Probe")
+            add_module(project, "dialogue")
+            _write_dialogue_runner_probe(project)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/dialogue_runner_probe.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#DialogueRunnerProbe").call("run_probe")
+
+        self.assertTrue(result["ok"], result)
+
+    def test_dialogue_runner_state_persistence_runs_in_godot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Dialogue Persistence Probe")
+            add_module(project, "dialogue")
+            _write_dialogue_persistence_probe(project)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/dialogue_persistence_probe.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#DialoguePersistenceProbe").call("run_probe")
+
+        self.assertTrue(result["ok"], result)
+
+    def test_installed_dialogue_scripts_parse(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Dialogue Parse Probe")
+            add_module(project, "dialogue", demo=True)
+
+            result = check_project_scripts(
+                project,
+                ["res://addons/dialogue", "res://scripts/dialogue_demo"],
+                exclude=["addons/godot_playwright/**"],
+            )
+
+        self.assertTrue(result["ok"], result["diagnostics"])
+
+    def test_installed_dialogue_demo_resources_are_valid(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Dialogue Resource Probe")
+            add_module(project, "dialogue", demo=True)
+
+            result = check_project_resources(
+                project,
+                ["res://scenes/dialogue_demo", "res://resources/dialogue_demo"],
+                exclude=["addons/godot_playwright/**"],
+            )
+
+        self.assertTrue(result["ok"], result["diagnostics"])
+
+    def test_dialogue_demo_runs_in_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Dialogue Demo Probe")
+            add_module(project, "dialogue", demo=True)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/dialogue_demo/dialogue_demo.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#DialogueDemo").call("run_dialogue_demo")
+
+        self.assertTrue(result["ok"], result.get("errors"))
+        self.assertEqual(result["final_line_id"], "guard_supplies")
+        self.assertTrue(result["variables"]["asked_supplies"])
+        self.assertTrue(result["variables"]["supplies_received"])
+        self.assertEqual(result["choices_seen"]["greet"], 2)
+        self.assertEqual(result["choices_seen"]["ask"], 2)
+
+    def test_installed_dialogue_demo_test_runs_without_main_scene_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Dialogue Demo Test Probe")
+            add_module(project, "dialogue", demo=True)
+
+            report = run_tests(
+                project,
+                [project / "tests" / "dialogue_demo"],
+                artifacts_dir=root / "artifacts",
+                trace="off",
+                timeout=30,
+            )
+
+        self.assertEqual(report["failed"], 0, report["tests"])
+        self.assertEqual(report["passed"], 1)
+
+    def test_dialogue_integrates_with_save_load_when_installed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = init_project(root / "project", name="Dialogue Save Load Probe")
+            add_module(project, "save_load")
+            add_module(project, "dialogue")
+            _write_dialogue_save_load_probe(project)
+            project_file = project / "project.godot"
+            project_file.write_text(
+                project_file.read_text(encoding="utf-8").replace(
+                    'run/main_scene="res://scenes/main.tscn"',
+                    'run/main_scene="res://scenes/dialogue_save_load_probe.tscn"',
+                ),
+                encoding="utf-8",
+            )
+
+            with Godot(project, mode="runtime", timeout=30, stdout=None) as godot:
+                result = godot.locator("#DialogueSaveLoadProbe").call("run_probe")
+
+        self.assertTrue(result["ok"], result)
+
+
+def _write_dialogue_database_probe(project: Path) -> None:
+    (project / "scripts" / "dialogue_database_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            const DialogueChoiceDefinitionData := preload("res://addons/dialogue/dialogue_choice_definition.gd")
+            const DialogueLineDefinitionData := preload("res://addons/dialogue/dialogue_line_definition.gd")
+            const DialogueDefinitionData := preload("res://addons/dialogue/dialogue_definition.gd")
+            const DialogueDatabaseData := preload("res://addons/dialogue/dialogue_database.gd")
+
+
+            func run_probe() -> Dictionary:
+                var errors: Array[String] = []
+                var choice := DialogueChoiceDefinitionData.new()
+                choice.choice_id = &"yes"
+                choice.display_name = "Yes"
+                choice.next_line_id = &"line_2"
+
+                var line := DialogueLineDefinitionData.new()
+                line.line_id = &"line_1"
+                line.speaker = "NPC"
+                line.text = "Hello?"
+                line.choices = [choice]
+
+                var line2 := DialogueLineDefinitionData.new()
+                line2.line_id = &"line_2"
+                line2.speaker = "NPC"
+                line2.text = "Goodbye."
+
+                var dialogue := DialogueDefinitionData.new()
+                dialogue.dialogue_id = &"greet"
+                dialogue.lines = [line, line2]
+                dialogue.start_line_id = &"line_1"
+
+                var valid_database := DialogueDatabaseData.new()
+                valid_database.dialogues.append(dialogue)
+                _assert_ok(valid_database.validate(), "valid database", errors)
+                _assert_bool(valid_database.has_dialogue("greet"), "has dialogue", errors)
+                _assert_string("greet", String(valid_database.get_dialogue("greet").dialogue_id), "dialogue lookup", errors)
+                _assert_string("line_1", String(valid_database.get_line("greet", "line_1").line_id), "line lookup", errors)
+                _assert_bool(valid_database.get_line("greet", "missing") == null, "missing line returns null", errors)
+                _assert_int(1, valid_database.get_dialogue_ids().size(), "dialogue id count", errors)
+
+                var null_dialogue_database := DialogueDatabaseData.new()
+                null_dialogue_database.dialogues.append(null)
+                _assert_error(null_dialogue_database.validate(), "dialogues[0] is null", "null dialogue resource", errors)
+
+                var invalid_resource_database := DialogueDatabaseData.new()
+                invalid_resource_database.dialogues.append(Resource.new())
+                _assert_error(invalid_resource_database.validate(), "must be a DialogueDefinition", "invalid dialogue resource", errors)
+
+                var empty_id := DialogueDefinitionData.new()
+                empty_id.dialogue_id = &""
+                var empty_database := DialogueDatabaseData.new()
+                empty_database.dialogues.append(empty_id)
+                _assert_error(empty_database.validate(), "dialogue_id must be non-empty", "empty dialogue_id", errors)
+
+                var whitespace_id := DialogueDefinitionData.new()
+                whitespace_id.dialogue_id = &" bad "
+                var whitespace_database := DialogueDatabaseData.new()
+                whitespace_database.dialogues.append(whitespace_id)
+                _assert_error(whitespace_database.validate(), "must not contain leading or trailing whitespace", "whitespace dialogue_id", errors)
+
+                var duplicate := DialogueDefinitionData.new()
+                duplicate.dialogue_id = &"greet"
+                var duplicate_database := DialogueDatabaseData.new()
+                duplicate_database.dialogues.append(dialogue)
+                duplicate_database.dialogues.append(duplicate)
+                _assert_error(duplicate_database.validate(), "Duplicate dialogue_id", "duplicate dialogue_id", errors)
+
+                var bad_variables := DialogueDefinitionData.new()
+                bad_variables.dialogue_id = &"bad_variables"
+                bad_variables.default_variables = {"node": self}
+                var bad_variables_database := DialogueDatabaseData.new()
+                bad_variables_database.dialogues.append(bad_variables)
+                _assert_error(bad_variables_database.validate(), "default_variables must be JSON-compatible", "bad default_variables", errors)
+
+                var duplicate_line := DialogueLineDefinitionData.new()
+                duplicate_line.line_id = &"same"
+                var duplicate_line_b := DialogueLineDefinitionData.new()
+                duplicate_line_b.line_id = &"same"
+                var duplicate_lines := DialogueDefinitionData.new()
+                duplicate_lines.dialogue_id = &"duplicate_lines"
+                duplicate_lines.lines = [duplicate_line, duplicate_line_b]
+                var duplicate_lines_database := DialogueDatabaseData.new()
+                duplicate_lines_database.dialogues.append(duplicate_lines)
+                _assert_error(duplicate_lines_database.validate(), "Duplicate line_id", "duplicate line_id", errors)
+
+                var null_line := DialogueDefinitionData.new()
+                null_line.dialogue_id = &"null_line"
+                null_line.lines = [null]
+                var null_line_database := DialogueDatabaseData.new()
+                null_line_database.dialogues.append(null_line)
+                _assert_error(null_line_database.validate(), "lines[0] is null", "null line resource", errors)
+
+                var invalid_line_resource := DialogueDefinitionData.new()
+                invalid_line_resource.dialogue_id = &"invalid_line_resource"
+                invalid_line_resource.lines = [Resource.new()]
+                var invalid_line_resource_database := DialogueDatabaseData.new()
+                invalid_line_resource_database.dialogues.append(invalid_line_resource)
+                _assert_error(invalid_line_resource_database.validate(), "must be a DialogueLineDefinition", "invalid line resource", errors)
+
+                var whitespace_line := DialogueLineDefinitionData.new()
+                whitespace_line.line_id = &" bad "
+                var whitespace_line_dialogue := DialogueDefinitionData.new()
+                whitespace_line_dialogue.dialogue_id = &"whitespace_line"
+                whitespace_line_dialogue.lines = [whitespace_line]
+                var whitespace_line_database := DialogueDatabaseData.new()
+                whitespace_line_database.dialogues.append(whitespace_line_dialogue)
+                _assert_error(whitespace_line_database.validate(), "must not contain leading or trailing whitespace", "whitespace line_id", errors)
+
+                var bad_start_line := DialogueDefinitionData.new()
+                bad_start_line.dialogue_id = &"bad_start_line"
+                bad_start_line.lines = [line]
+                bad_start_line.start_line_id = &"missing"
+                var bad_start_database := DialogueDatabaseData.new()
+                bad_start_database.dialogues.append(bad_start_line)
+                _assert_error(bad_start_database.validate(), "start_line_id must reference an existing line_id", "bad start_line_id", errors)
+
+                var bad_next_line := DialogueLineDefinitionData.new()
+                bad_next_line.line_id = &"bad_next"
+                bad_next_line.next_line_id = &"missing"
+                var bad_next_dialogue := DialogueDefinitionData.new()
+                bad_next_dialogue.dialogue_id = &"bad_next_line"
+                bad_next_dialogue.lines = [bad_next_line]
+                bad_next_dialogue.start_line_id = &"bad_next"
+                var bad_next_database := DialogueDatabaseData.new()
+                bad_next_database.dialogues.append(bad_next_dialogue)
+                _assert_error(bad_next_database.validate(), "next_line_id references unknown line_id", "bad next_line_id", errors)
+
+                var bad_choice := DialogueChoiceDefinitionData.new()
+                bad_choice.choice_id = &"bad_choice"
+                bad_choice.on_select = {"node": self}
+                var bad_choice_line := DialogueLineDefinitionData.new()
+                bad_choice_line.line_id = &"bad_choice_line"
+                bad_choice_line.choices = [bad_choice]
+                var bad_choice_dialogue := DialogueDefinitionData.new()
+                bad_choice_dialogue.dialogue_id = &"bad_choice_dialogue"
+                bad_choice_dialogue.lines = [bad_choice_line]
+                bad_choice_dialogue.start_line_id = &"bad_choice_line"
+                var bad_choice_database := DialogueDatabaseData.new()
+                bad_choice_database.dialogues.append(bad_choice_dialogue)
+                _assert_error(bad_choice_database.validate(), "on_select must be JSON-compatible", "bad on_select", errors)
+
+                var cyclic_array_value := []
+                cyclic_array_value.append(cyclic_array_value)
+                var cyclic_array := DialogueDefinitionData.new()
+                cyclic_array.dialogue_id = &"cyclic_array"
+                cyclic_array.default_data = {"value": cyclic_array_value}
+                var cyclic_array_database := DialogueDatabaseData.new()
+                cyclic_array_database.dialogues.append(cyclic_array)
+                _assert_error(cyclic_array_database.validate(), "default_data must be JSON-compatible", "cyclic array default_data", errors)
+
+                var cyclic_dict_value := {}
+                cyclic_dict_value["self"] = cyclic_dict_value
+                var cyclic_dict := DialogueDefinitionData.new()
+                cyclic_dict.dialogue_id = &"cyclic_dict"
+                cyclic_dict.default_variables = cyclic_dict_value
+                var cyclic_dict_database := DialogueDatabaseData.new()
+                cyclic_dict_database.dialogues.append(cyclic_dict)
+                _assert_error(cyclic_dict_database.validate(), "default_variables must be JSON-compatible", "cyclic dict default_variables", errors)
+
+                var bad_key_data := DialogueDefinitionData.new()
+                bad_key_data.dialogue_id = &"bad_key_data"
+                bad_key_data.default_data = {1: "one"}
+                var bad_key_database := DialogueDatabaseData.new()
+                bad_key_database.dialogues.append(bad_key_data)
+                _assert_error(bad_key_database.validate(), "default_data must be JSON-compatible", "non-string key default_data", errors)
+
+                return {"ok": errors.is_empty(), "errors": errors}
+
+
+            func _assert_ok(result: Dictionary, label: String, errors: Array[String]) -> void:
+                if not bool(result.get("ok", false)):
+                    errors.append("%s failed: %s" % [label, str(result)])
+
+
+            func _assert_error(result: Dictionary, needle: String, label: String, errors: Array[String]) -> void:
+                if bool(result.get("ok", true)):
+                    errors.append("%s should fail" % label)
+                    return
+                for message in result.get("errors", []):
+                    if String(message).contains(needle):
+                        return
+                errors.append("%s missing %s in %s" % [label, needle, str(result)])
+
+
+            func _assert_bool(value: bool, message: String, errors: Array[String]) -> void:
+                if not value:
+                    errors.append(message)
+
+
+            func _assert_string(expected: String, actual: String, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %s, got %s" % [label, expected, actual])
+
+
+            func _assert_int(expected: int, actual: int, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %d, got %d" % [label, expected, actual])
+            """
+        ),
+        encoding="utf-8",
+    )
+    (project / "scenes" / "dialogue_database_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://scripts/dialogue_database_probe.gd" id="1_probe_script"]
+
+            [node name="DialogueDatabaseProbe" type="Node"]
+            script = ExtResource("1_probe_script")
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_dialogue_runner_probe(project: Path) -> None:
+    (project / "scripts" / "dialogue_runner_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            const DialogueChoiceDefinitionData := preload("res://addons/dialogue/dialogue_choice_definition.gd")
+            const DialogueLineDefinitionData := preload("res://addons/dialogue/dialogue_line_definition.gd")
+            const DialogueDefinitionData := preload("res://addons/dialogue/dialogue_definition.gd")
+            const DialogueDatabaseData := preload("res://addons/dialogue/dialogue_database.gd")
+            const DialogueRunnerData := preload("res://addons/dialogue/dialogue_runner.gd")
+
+
+            func run_probe() -> Dictionary:
+                var errors: Array[String] = []
+                var runner := DialogueRunnerData.new()
+                runner.initialize_on_ready = false
+                runner.database = _make_database()
+                add_child(runner)
+
+                _assert_ok(runner.initialize_dialogues(), "initialize_dialogues", errors)
+                _assert_bool(runner.has_dialogue("branching"), "branching should exist", errors)
+                _assert_bool(runner.has_dialogue(" linear "), "has_dialogue should normalize ids", errors)
+
+                var start: Dictionary = runner.start_dialogue("branching")
+                _assert_ok(start, "start branching", errors)
+                _assert_string("active", String(start.get("status", "")), "start result status", errors)
+                _assert_string("line_a", String(runner.get_current_line().get("line_id", "")), "current line after start", errors)
+                _assert_has_event(start.get("events", []), "dialogue_started", "branching", "start event", errors)
+
+                var choices: Array = runner.get_choices()
+                _assert_int(2, choices.size(), "line_a choices count", errors)
+                if choices.size() == 2:
+                    _assert_bool(bool(choices[0].get("available", false)), "first choice available", errors)
+                    _assert_string("line_b", String(choices[0].get("next_line_id", "")), "first choice next line", errors)
+
+                var select: Dictionary = runner.select_choice("to_b")
+                _assert_ok(select, "select to_b", errors)
+                _assert_string("line_b", String(runner.get_current_line().get("line_id", "")), "current line after select", errors)
+                _assert_has_event(select.get("events", []), "choice_selected", "to_b", "choice event", errors)
+                _assert_has_event(select.get("events", []), "line_entered", "line_b", "enter event after select", errors)
+
+                var advance_result: Dictionary = runner.advance()
+                _assert_ok(advance_result, "advance from line_b", errors)
+                _assert_string("line_c", String(runner.get_current_line().get("line_id", "")), "current line after advance", errors)
+
+                var advance_end: Dictionary = runner.advance()
+                _assert_ok(advance_end, "advance to end", errors)
+                _assert_string("completed", String(advance_end.get("status", "")), "status after completion", errors)
+                _assert_bool(runner.get_current_line().is_empty(), "no current line after end", errors)
+
+                var linear_start: Dictionary = runner.start_dialogue("linear")
+                _assert_ok(linear_start, "start linear", errors)
+                _assert_error(runner.advance(), "choices", "advance on line with choices", errors)
+
+                var variables := runner.get_variables()
+                _assert_bool(variables.is_empty(), "variables empty before set", errors)
+                var set_result: Dictionary = runner.set_variable("key", "value")
+                _assert_ok(set_result, "set variable", errors)
+                _assert_string("value", String(runner.get_variable("key")), "get variable", errors)
+
+                var stop: Dictionary = runner.stop_dialogue()
+                _assert_ok(stop, "stop dialogue", errors)
+                _assert_string("completed", String(stop.get("status", "")), "stop result status", errors)
+
+                return {"ok": errors.is_empty(), "errors": errors}
+
+
+            func _make_database() -> Resource:
+                var to_b := DialogueChoiceDefinitionData.new()
+                to_b.choice_id = &"to_b"
+                to_b.display_name = "Go to B"
+                to_b.next_line_id = &"line_b"
+
+                var to_c := DialogueChoiceDefinitionData.new()
+                to_c.choice_id = &"to_c"
+                to_c.display_name = "Go to C"
+                to_c.next_line_id = &"line_c"
+
+                var line_a := DialogueLineDefinitionData.new()
+                line_a.line_id = &"line_a"
+                line_a.speaker = "A"
+                line_a.text = "Line A"
+                line_a.choices = [to_b, to_c]
+
+                var line_b := DialogueLineDefinitionData.new()
+                line_b.line_id = &"line_b"
+                line_b.speaker = "B"
+                line_b.text = "Line B"
+                line_b.next_line_id = &"line_c"
+                line_b.apply_variables = {"visited_b": true}
+
+                var line_c := DialogueLineDefinitionData.new()
+                line_c.line_id = &"line_c"
+                line_c.speaker = "C"
+                line_c.text = "Line C"
+
+                var branching := DialogueDefinitionData.new()
+                branching.dialogue_id = &"branching"
+                branching.lines = [line_a, line_b, line_c]
+                branching.start_line_id = &"line_a"
+
+                var linear_choice := DialogueChoiceDefinitionData.new()
+                linear_choice.choice_id = &"only"
+                linear_choice.display_name = "Only"
+                linear_choice.next_line_id = &"end"
+
+                var linear_line := DialogueLineDefinitionData.new()
+                linear_line.line_id = &"start"
+                linear_line.speaker = "S"
+                linear_line.text = "Start"
+                linear_line.choices = [linear_choice]
+
+                var end_line := DialogueLineDefinitionData.new()
+                end_line.line_id = &"end"
+                end_line.speaker = "E"
+                end_line.text = "End"
+
+                var linear := DialogueDefinitionData.new()
+                linear.dialogue_id = &"linear"
+                linear.lines = [linear_line, end_line]
+                linear.start_line_id = &"start"
+
+                var database := DialogueDatabaseData.new()
+                database.dialogues.append(branching)
+                database.dialogues.append(linear)
+                return database
+
+
+            func _assert_ok(result: Dictionary, label: String, errors: Array[String]) -> void:
+                if not bool(result.get("ok", false)):
+                    errors.append("%s failed: %s" % [label, str(result)])
+
+
+            func _assert_error(result: Dictionary, needle: String, label: String, errors: Array[String]) -> void:
+                if bool(result.get("ok", true)):
+                    errors.append("%s should fail" % label)
+                    return
+                for message in result.get("errors", []):
+                    if String(message).contains(needle):
+                        return
+                errors.append("%s missing %s in %s" % [label, needle, str(result)])
+
+
+            func _assert_has_event(events: Array, event_type: String, expected_id: String, label: String, errors: Array[String]) -> void:
+                for event in events:
+                    if String(event.get("type", "")) == event_type:
+                        if String(event.get("dialogue_id", "")) == expected_id:
+                            return
+                        if String(event.get("line_id", "")) == expected_id:
+                            return
+                        if String(event.get("choice_id", "")) == expected_id:
+                            return
+                errors.append("%s missing %s for %s in %s" % [label, event_type, expected_id, str(events)])
+
+
+            func _assert_bool(value: bool, message: String, errors: Array[String]) -> void:
+                if not value:
+                    errors.append(message)
+
+
+            func _assert_string(expected: String, actual: String, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %s, got %s" % [label, expected, actual])
+
+
+            func _assert_int(expected: int, actual: int, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %d, got %d" % [label, expected, actual])
+            """
+        ),
+        encoding="utf-8",
+    )
+    (project / "scenes" / "dialogue_runner_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://scripts/dialogue_runner_probe.gd" id="1_probe_script"]
+
+            [node name="DialogueRunnerProbe" type="Node"]
+            script = ExtResource("1_probe_script")
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_dialogue_persistence_probe(project: Path) -> None:
+    (project / "scripts" / "dialogue_persistence_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            const DialogueChoiceDefinitionData := preload("res://addons/dialogue/dialogue_choice_definition.gd")
+            const DialogueLineDefinitionData := preload("res://addons/dialogue/dialogue_line_definition.gd")
+            const DialogueDefinitionData := preload("res://addons/dialogue/dialogue_definition.gd")
+            const DialogueDatabaseData := preload("res://addons/dialogue/dialogue_database.gd")
+            const DialogueRunnerData := preload("res://addons/dialogue/dialogue_runner.gd")
+
+
+            func run_probe() -> Dictionary:
+                var errors: Array[String] = []
+                var database := _make_database()
+                var runner := _make_runner(database)
+                _assert_ok(runner.initialize_dialogues(), "initialize_dialogues", errors)
+                _assert_ok(runner.start_dialogue("main", {"started_by": "probe"}), "start main", errors)
+                _assert_ok(runner.select_choice("next"), "select next", errors)
+                runner.set_variable("mood", "happy")
+
+                var saved: Dictionary = runner.get_state()
+                _assert_int(1, int(saved.get("schema_version", 0)), "schema_version", errors)
+                _assert_string("main", String(saved.get("active_dialogue_id", "")), "saved active dialogue", errors)
+                _assert_string("line_b", String(saved.get("current_line_id", "")), "saved current line", errors)
+                _assert_string("active", String(saved.get("status", "")), "saved status", errors)
+                _assert_string("happy", String(saved.get("variables", {}).get("mood", "")), "saved variable", errors)
+                _assert_int(1, (saved.get("dialogues", []) as Array).size(), "saved dialogue count", errors)
+
+                var restored := _make_runner(database)
+                _assert_ok(restored.apply_state(saved), "apply saved state", errors)
+                _assert_string("main", String(restored.get_state().get("active_dialogue_id", "")), "restored active dialogue", errors)
+                _assert_string("line_b", String(restored.get_current_line().get("line_id", "")), "restored current line", errors)
+                _assert_string("happy", String(restored.get_variable("mood")), "restored variable", errors)
+                _assert_string("probe", String(restored.get_dialogue("main").get("data", {}).get("started_by", "")), "restored dialogue data", errors)
+
+                var bad_state := saved.duplicate(true)
+                bad_state["schema_version"] = 1.5
+                _assert_invalid_state(restored, bad_state, "schema_version must be an integer", "float schema version", errors)
+
+                var bad_status := saved.duplicate(true)
+                bad_status["status"] = "invalid"
+                _assert_invalid_state(restored, bad_status, "status is invalid", "invalid status", errors)
+
+                var bad_variables := saved.duplicate(true)
+                bad_variables["variables"] = {"node": self}
+                _assert_invalid_state(restored, bad_variables, "variables must be JSON-compatible", "non-json variables", errors)
+
+                var stale_dialogue := saved.duplicate(true)
+                stale_dialogue["dialogues"].append({"dialogue_id": "stale", "status": "inactive", "data": {}})
+                _assert_invalid_state(restored, stale_dialogue, "Unknown dialogue_id", "stale dialogue id", errors)
+
+                var duplicate_dialogue := saved.duplicate(true)
+                duplicate_dialogue["dialogues"].append(duplicate_dialogue["dialogues"][0].duplicate(true))
+                _assert_invalid_state(restored, duplicate_dialogue, "Duplicate dialogue_id", "duplicate dialogue id", errors)
+
+                return {"ok": errors.is_empty(), "errors": errors}
+
+
+            func _make_runner(database: Resource) -> Node:
+                var runner := DialogueRunnerData.new()
+                runner.initialize_on_ready = false
+                runner.database = database
+                add_child(runner)
+                return runner
+
+
+            func _make_database() -> Resource:
+                var next_choice := DialogueChoiceDefinitionData.new()
+                next_choice.choice_id = &"next"
+                next_choice.display_name = "Next"
+                next_choice.next_line_id = &"line_b"
+
+                var line_a := DialogueLineDefinitionData.new()
+                line_a.line_id = &"line_a"
+                line_a.speaker = "A"
+                line_a.text = "Line A"
+                line_a.choices = [next_choice]
+
+                var line_b := DialogueLineDefinitionData.new()
+                line_b.line_id = &"line_b"
+                line_b.speaker = "B"
+                line_b.text = "Line B"
+
+                var main := DialogueDefinitionData.new()
+                main.dialogue_id = &"main"
+                main.lines = [line_a, line_b]
+                main.start_line_id = &"line_a"
+
+                var database := DialogueDatabaseData.new()
+                database.dialogues.append(main)
+                return database
+
+
+            func _assert_invalid_state(runner: Node, state: Dictionary, needle: String, label: String, errors: Array[String]) -> void:
+                var before: Dictionary = runner.get_state()
+                var result: Dictionary = runner.apply_state(state)
+                _assert_error(result, needle, label, errors)
+                _assert_state_unchanged(before, runner, label, errors)
+
+
+            func _assert_state_unchanged(before: Dictionary, runner: Node, label: String, errors: Array[String]) -> void:
+                var after: Dictionary = runner.get_state()
+                if before != after:
+                    errors.append("%s mutated state: before %s after %s" % [label, str(before), str(after)])
+
+
+            func _assert_ok(result: Dictionary, label: String, errors: Array[String]) -> void:
+                if not bool(result.get("ok", false)):
+                    errors.append("%s failed: %s" % [label, str(result)])
+
+
+            func _assert_error(result: Dictionary, needle: String, label: String, errors: Array[String]) -> void:
+                if bool(result.get("ok", true)):
+                    errors.append("%s should fail" % label)
+                    return
+                for message in result.get("errors", []):
+                    if String(message).contains(needle):
+                        return
+                errors.append("%s missing %s in %s" % [label, needle, str(result)])
+
+
+            func _assert_bool(value: bool, message: String, errors: Array[String]) -> void:
+                if not value:
+                    errors.append(message)
+
+
+            func _assert_string(expected: String, actual: String, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %s, got %s" % [label, expected, actual])
+
+
+            func _assert_int(expected: int, actual: int, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %d, got %d" % [label, expected, actual])
+            """
+        ),
+        encoding="utf-8",
+    )
+    (project / "scenes" / "dialogue_persistence_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://scripts/dialogue_persistence_probe.gd" id="1_probe_script"]
+
+            [node name="DialoguePersistenceProbe" type="Node"]
+            script = ExtResource("1_probe_script")
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_dialogue_save_load_probe(project: Path) -> None:
+    (project / "scripts" / "dialogue_save_load_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            const DialogueChoiceDefinitionData := preload("res://addons/dialogue/dialogue_choice_definition.gd")
+            const DialogueLineDefinitionData := preload("res://addons/dialogue/dialogue_line_definition.gd")
+            const DialogueDefinitionData := preload("res://addons/dialogue/dialogue_definition.gd")
+            const DialogueDatabaseData := preload("res://addons/dialogue/dialogue_database.gd")
+            const DialogueRunnerData := preload("res://addons/dialogue/dialogue_runner.gd")
+
+
+            func run_probe() -> Dictionary:
+                var errors: Array[String] = []
+                var database := _make_database()
+                var runner := DialogueRunnerData.new()
+                runner.save_id = &"probe_dialogue"
+                runner.initialize_on_ready = false
+                runner.database = database
+                add_child(runner)
+                _assert_bool(runner.is_in_group("save_participants"), "DialogueRunner should join save_participants", errors)
+                _assert_ok(runner.initialize_dialogues(), "initialize_dialogues", errors)
+                _assert_ok(runner.start_dialogue("main"), "start main", errors)
+                _assert_ok(runner.select_choice("next"), "select next", errors)
+                runner.set_variable("key", "value")
+
+                var saved_state: Dictionary = runner.save_state()
+                _assert_string("main", String(saved_state.get("active_dialogue_id", "")), "saved active dialogue", errors)
+                _assert_string("line_b", String(saved_state.get("current_line_id", "")), "saved current line", errors)
+
+                var restored := DialogueRunnerData.new()
+                restored.initialize_on_ready = false
+                restored.database = database
+                add_child(restored)
+                restored.load_state(saved_state)
+                _assert_string("main", String(restored.get_state().get("active_dialogue_id", "")), "restored active dialogue", errors)
+                _assert_string("line_b", String(restored.get_current_line().get("line_id", "")), "restored current line", errors)
+                _assert_string("value", String(restored.get_variable("key")), "restored variable", errors)
+
+                return {"ok": errors.is_empty(), "errors": errors}
+
+
+            func _make_database() -> Resource:
+                var next_choice := DialogueChoiceDefinitionData.new()
+                next_choice.choice_id = &"next"
+                next_choice.display_name = "Next"
+                next_choice.next_line_id = &"line_b"
+
+                var line_a := DialogueLineDefinitionData.new()
+                line_a.line_id = &"line_a"
+                line_a.speaker = "A"
+                line_a.text = "Line A"
+                line_a.choices = [next_choice]
+
+                var line_b := DialogueLineDefinitionData.new()
+                line_b.line_id = &"line_b"
+                line_b.speaker = "B"
+                line_b.text = "Line B"
+
+                var main := DialogueDefinitionData.new()
+                main.dialogue_id = &"main"
+                main.lines = [line_a, line_b]
+                main.start_line_id = &"line_a"
+
+                var database := DialogueDatabaseData.new()
+                database.dialogues.append(main)
+                return database
+
+
+            func _assert_ok(result: Dictionary, label: String, errors: Array[String]) -> void:
+                if not bool(result.get("ok", false)):
+                    errors.append("%s failed: %s" % [label, str(result)])
+
+
+            func _assert_bool(value: bool, message: String, errors: Array[String]) -> void:
+                if not value:
+                    errors.append(message)
+
+
+            func _assert_string(expected: String, actual: String, label: String, errors: Array[String]) -> void:
+                if expected != actual:
+                    errors.append("%s: expected %s, got %s" % [label, expected, actual])
+            """
+        ),
+        encoding="utf-8",
+    )
+    (project / "scenes" / "dialogue_save_load_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://scripts/dialogue_save_load_probe.gd" id="1_probe_script"]
+
+            [node name="DialogueSaveLoadProbe" type="Node"]
+            script = ExtResource("1_probe_script")
             """
         ),
         encoding="utf-8",

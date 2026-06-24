@@ -1,0 +1,8 @@
+[gd_resource type="Resource" script_class="DialogueDatabase" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://addons/dialogue/dialogue_database.gd" id="1_database_script"]
+[ext_resource type="Resource" path="res://resources/dialogue_demo/guard_dialogue.tres" id="2_guard_dialogue"]
+
+[resource]
+script = ExtResource("1_database_script")
+dialogues = Array[Resource]([ExtResource("2_guard_dialogue")])

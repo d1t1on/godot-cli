@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="DialogueLineDefinition" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://addons/dialogue/dialogue_line_definition.gd" id="1_line_script"]
+[ext_resource type="Resource" path="res://resources/dialogue_demo/ask_business_choice.tres" id="2_ask_business"]
+[ext_resource type="Resource" path="res://resources/dialogue_demo/leave_choice.tres" id="3_leave"]
+
+[resource]
+script = ExtResource("1_line_script")
+line_id = &"guard_greet"
+speaker = "Guard"
+text = "Halt! State your business."
+choices = Array[Resource]([ExtResource("2_ask_business"), ExtResource("3_leave")])

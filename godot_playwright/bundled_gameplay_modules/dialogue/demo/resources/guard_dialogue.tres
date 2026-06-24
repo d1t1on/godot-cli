@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="DialogueDefinition" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://addons/dialogue/dialogue_definition.gd" id="1_dialogue_script"]
+[ext_resource type="Resource" path="res://resources/dialogue_demo/guard_greet.tres" id="2_guard_greet"]
+[ext_resource type="Resource" path="res://resources/dialogue_demo/guard_ask.tres" id="3_guard_ask"]
+[ext_resource type="Resource" path="res://resources/dialogue_demo/guard_supplies.tres" id="4_guard_supplies"]
+[ext_resource type="Resource" path="res://resources/dialogue_demo/guard_bye.tres" id="5_guard_bye"]
+
+[resource]
+script = ExtResource("1_dialogue_script")
+dialogue_id = &"guard_greet"
+display_name = "Guard Greeting"
+description = "A branching guard conversation demo."
+tags = Array[StringName]([&"demo", &"guard"])
+lines = Array[Resource]([ExtResource("2_guard_greet"), ExtResource("3_guard_ask"), ExtResource("4_guard_supplies"), ExtResource("5_guard_bye")])
+start_line_id = &"guard_greet"
