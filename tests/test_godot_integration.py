@@ -29,6 +29,7 @@ from godot_playwright import (
     expect_script_file,
     expect_trace,
 )
+from godot_playwright.project import init_project
 
 
 GENERATED_PIXEL_PNG = base64.b64decode(
@@ -2262,3 +2263,207 @@ def wait_for_resource(godot, path: str, *, type_hint: str = "", timeout: float =
         if time.monotonic() >= deadline:
             raise AssertionError(f"Timed out waiting for resource {path!r}; last error was {last_error!r}")
         time.sleep(0.05)
+
+
+def _write_audio_probe(project: Path) -> None:
+    scripts_dir = project / "scripts"
+    scenes_dir = project / "scenes"
+    scripts_dir.mkdir(exist_ok=True)
+    scenes_dir.mkdir(exist_ok=True)
+    (scripts_dir / "audio_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node
+
+            var _probe_result: Dictionary = {}
+
+
+            func _ready() -> void:
+                _setup_audio_bus()
+                _probe_result = _run_audio_probe()
+
+
+            func _setup_audio_bus() -> void:
+                AudioServer.add_bus()
+                var bus_idx := AudioServer.get_bus_count() - 1
+                AudioServer.set_bus_name(bus_idx, "TestBus")
+                AudioServer.set_bus_send(bus_idx, "Master")
+                AudioServer.set_bus_volume_db(bus_idx, -6.0)
+                AudioServer.set_bus_mute(bus_idx, true)
+
+
+            func _run_audio_probe() -> Dictionary:
+                var server_node = get_node_or_null("/root/GodotPlaywright")
+                if server_node == null:
+                    return {"ok": false, "error": "GodotPlaywright autoload not found"}
+                var server = server_node.get_node_or_null("GodotPlaywrightServer")
+                if server == null:
+                    return {"ok": false, "error": "GodotPlaywrightServer node not found"}
+                var rpc_result: Dictionary = server.call("_dispatch", "audio.bus.info", {"bus_name": "TestBus"})
+                if not rpc_result.has("ok") or not rpc_result["ok"]:
+                    return {"ok": false, "error": "RPC returned error", "rpc_result": rpc_result}
+                var bus_info: Dictionary = rpc_result.get("value", {}).get("bus", {})
+                var volume_db := float(bus_info.get("volume_db", 0.0))
+                var muted := bool(bus_info.get("muted", false))
+                var volume_ok := absf(volume_db - (-6.0)) < 0.01
+                var muted_ok := muted == true
+                var ok := volume_ok and muted_ok
+                return {
+                    "ok": ok,
+                    "volume_db": volume_db,
+                    "muted": muted,
+                    "volume_ok": volume_ok,
+                    "muted_ok": muted_ok,
+                    "bus_name": str(bus_info.get("name", "")),
+                }
+
+
+            func get_probe_result() -> Dictionary:
+                return _probe_result
+            """
+        ),
+        encoding="utf-8",
+    )
+    (scenes_dir / "audio_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://scripts/audio_probe.gd" id="1_probe"]
+
+            [node name="AudioProbe" type="Node"]
+            script = ExtResource("1_probe")
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_navigation_probe(project: Path) -> None:
+    scripts_dir = project / "scripts"
+    scenes_dir = project / "scenes"
+    scripts_dir.mkdir(exist_ok=True)
+    scenes_dir.mkdir(exist_ok=True)
+    (scripts_dir / "navigation_probe.gd").write_text(
+        textwrap.dedent(
+            """\
+            extends Node3D
+
+            var _probe_result: Dictionary = {}
+            var _region: NavigationRegion3D = null
+
+
+            func _ready() -> void:
+                _setup_navigation()
+                for _i in range(10):
+                    await get_tree().process_frame
+                _probe_result = _run_navigation_probe()
+
+
+            func _setup_navigation() -> void:
+                _region = NavigationRegion3D.new()
+                var nav_mesh := NavigationMesh.new()
+                var vertices := PackedVector3Array([
+                    Vector3(-10.0, 0.0, -10.0),
+                    Vector3(10.0, 0.0, -10.0),
+                    Vector3(10.0, 0.0, 10.0),
+                    Vector3(-10.0, 0.0, 10.0),
+                ])
+                nav_mesh.set_vertices(vertices)
+                nav_mesh.add_polygon(PackedInt32Array([0, 1, 2, 3]))
+                _region.navigation_mesh = nav_mesh
+                add_child(_region)
+
+
+            func _run_navigation_probe() -> Dictionary:
+                var server_node = get_node_or_null("/root/GodotPlaywright")
+                if server_node == null:
+                    return {"ok": false, "error": "GodotPlaywright autoload not found"}
+                var server = server_node.get_node_or_null("GodotPlaywrightServer")
+                if server == null:
+                    return {"ok": false, "error": "GodotPlaywrightServer node not found"}
+                var rpc_result: Dictionary = server.call("_dispatch", "navigation.query_path", {
+                    "dimension": 3,
+                    "start_x": 0.0, "start_y": 0.0, "start_z": 0.0,
+                    "target_x": 5.0, "target_y": 0.0, "target_z": 5.0,
+                })
+                if not rpc_result.has("ok") or not rpc_result["ok"]:
+                    return {"ok": false, "error": "RPC returned error", "rpc_result": rpc_result}
+                var path_info: Dictionary = rpc_result.get("value", {}).get("path", {})
+                var reachable := bool(path_info.get("reachable", false))
+                var point_count := int(path_info.get("point_count", 0))
+                var path_length := float(path_info.get("path_length", 0.0))
+                var ok := reachable and point_count >= 2
+                return {
+                    "ok": ok,
+                    "reachable": reachable,
+                    "point_count": point_count,
+                    "path_length": path_length,
+                }
+
+
+            func get_probe_result() -> Dictionary:
+                return _probe_result
+            """
+        ),
+        encoding="utf-8",
+    )
+    (scenes_dir / "navigation_probe.tscn").write_text(
+        textwrap.dedent(
+            """\
+            [gd_scene load_steps=2 format=3]
+
+            [ext_resource type="Script" path="res://scripts/navigation_probe.gd" id="1_probe"]
+
+            [node name="NavigationProbe" type="Node3D"]
+            script = ExtResource("1_probe")
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+@unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
+class DomainAssertionsAudioTests(unittest.TestCase):
+    def test_audio_bus_info_rpc(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project = init_project(Path(tmp) / "project", name="Audio Probe")
+            _write_audio_probe(project)
+            project_godot = project / "project.godot"
+            project_text = project_godot.read_text(encoding="utf-8")
+            project_text = project_text.replace(
+                'run/main_scene="res://scenes/main.tscn"',
+                'run/main_scene="res://scenes/audio_probe.tscn"',
+            )
+            project_godot.write_text(project_text, encoding="utf-8")
+
+            with Godot(project, mode="runtime", timeout=20, stdout=None) as godot:
+                probe_node = godot.locator("#AudioProbe")
+                godot.wait_for_process_frames(3, timeout=5)
+                result = probe_node.call("get_probe_result")
+                self.assertTrue(result["ok"], f"Audio probe failed: {result}")
+                self.assertAlmostEqual(float(result["volume_db"]), -6.0, delta=0.01)
+                self.assertTrue(bool(result["muted"]))
+
+
+@unittest.skipUnless(shutil.which("godot"), "godot executable is not available")
+class DomainAssertionsNavigationTests(unittest.TestCase):
+    def test_navigation_query_path_rpc(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project = init_project(Path(tmp) / "project", name="Navigation Probe")
+            _write_navigation_probe(project)
+            project_godot = project / "project.godot"
+            project_text = project_godot.read_text(encoding="utf-8")
+            project_text = project_text.replace(
+                'run/main_scene="res://scenes/main.tscn"',
+                'run/main_scene="res://scenes/navigation_probe.tscn"',
+            )
+            project_godot.write_text(project_text, encoding="utf-8")
+
+            with Godot(project, mode="runtime", timeout=20, stdout=None) as godot:
+                probe_node = godot.locator("#NavigationProbe")
+                godot.wait_for_process_frames(5, timeout=5)
+                result = probe_node.call("get_probe_result")
+                self.assertTrue(result["ok"], f"Navigation probe failed: {result}")
+                self.assertTrue(bool(result["reachable"]))
+                self.assertGreaterEqual(int(result["point_count"]), 2)
