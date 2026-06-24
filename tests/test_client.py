@@ -34,7 +34,11 @@ from godot_playwright import (
     expect_trace,
     expect_viewport,
 )
-from godot_playwright.client import _GodotLogCollector
+from godot_playwright.client import (
+    _GodotLogCollector,
+    AudioExpect,
+    NavigationExpect,
+)
 
 
 def _selector_is_missing(selector: Any) -> bool:
@@ -2102,6 +2106,27 @@ def _fake_dependency_summary(raw: str, existing_paths: set[str]) -> dict[str, An
         "checked": bool(path),
         "resource_type": type_name,
     }
+
+
+class _FakeGodotClient(GodotClient):
+    def __init__(self):
+        self._responses: dict[str, Any] = {}
+        self.last_rpc_method: str | None = None
+        self.last_rpc_params: dict[str, Any] | None = None
+
+    def set_response(self, method: str, response: Any) -> None:
+        self._responses[method] = response
+
+    def rpc(
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+        *,
+        timeout: float | None = None,
+    ) -> Any:
+        self.last_rpc_method = method
+        self.last_rpc_params = dict(params) if params else {}
+        return self._responses.get(method, {"ok": True})
 
 
 class FakeGodotHandler(BaseHTTPRequestHandler):
@@ -8382,6 +8407,163 @@ class ClientTests(unittest.TestCase):
             log.not_to_have_warning("Agent live warning", timeout=0.01, interval=0.001)
         self.assertGreaterEqual(len(self.client.log_events(clear=True)), 4)
         self.assertEqual(self.client.log_events(), [])
+
+
+class AudioBusInfoTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.client = _FakeGodotClient()
+
+    def test_audio_bus_info_calls_rpc(self) -> None:
+        self.client.set_response("audio.bus.info", {"ok": True, "bus": {"index": 0, "name": "Master", "volume_db": 0.0, "muted": False, "solo": False, "effect_count": 0, "effects": [], "send_target": "", "children": []}})
+        result = self.client.audio_bus_info(bus_name="Master")
+        self.assertEqual(self.client.last_rpc_method, "audio.bus.info")
+        self.assertEqual(self.client.last_rpc_params, {"bus_name": "Master"})
+        self.assertEqual(result["bus"]["name"], "Master")
+
+    def test_audio_bus_info_uses_index_default(self) -> None:
+        self.client.set_response("audio.bus.info", {"ok": True, "bus": {"index": 0, "name": "Master", "volume_db": 0.0, "muted": False, "solo": False, "effect_count": 0, "effects": [], "send_target": "", "children": []}})
+        result = self.client.audio_bus_info()
+        self.assertEqual(self.client.last_rpc_params, {"bus_index": 0})
+        self.assertTrue(result["ok"])
+
+    def test_navigation_query_path_calls_rpc_3d(self) -> None:
+        self.client.set_response("navigation.query_path", {"ok": True, "path": {"reachable": True, "points": [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]], "point_count": 2, "path_length": 10.0, "start": [0.0, 0.0, 0.0], "target": [10.0, 0.0, 0.0], "dimension": 3}})
+        result = self.client.navigation_query_path(start=(0, 0, 0), target=(10, 0, 0))
+        self.assertEqual(self.client.last_rpc_method, "navigation.query_path")
+        self.assertEqual(self.client.last_rpc_params["start_x"], 0.0)
+        self.assertEqual(self.client.last_rpc_params["target_x"], 10.0)
+        self.assertEqual(self.client.last_rpc_params["dimension"], 3)
+        self.assertTrue(result["path"]["reachable"])
+
+    def test_navigation_query_path_calls_rpc_2d(self) -> None:
+        self.client.set_response("navigation.query_path", {"ok": True, "path": {"reachable": True, "points": [[0.0, 0.0], [10.0, 0.0]], "point_count": 2, "path_length": 10.0, "start": [0.0, 0.0], "target": [10.0, 0.0], "dimension": 2}})
+        result = self.client.navigation_query_path(start=(0, 0), target=(10, 0), dimension=2)
+        self.assertEqual(self.client.last_rpc_params["dimension"], 2)
+        self.assertNotIn("start_z", self.client.last_rpc_params)
+
+
+class WaitForAudioBusTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.client = _FakeGodotClient()
+
+    def test_wait_for_audio_bus_volume_match(self) -> None:
+        self.client.set_response("audio.bus.info", {"ok": True, "bus": {"index": 0, "name": "Master", "volume_db": -6.0, "muted": False, "solo": False, "effect_count": 0, "effects": [], "send_target": "", "children": []}})
+        result = self.client.wait_for_audio_bus(bus_name="Master", volume_db=-6.0, timeout=1.0)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["bus"]["volume_db"], -6.0)
+
+    def test_wait_for_audio_bus_timeout(self) -> None:
+        self.client.set_response("audio.bus.info", {"ok": True, "bus": {"index": 0, "name": "Master", "volume_db": 0.0, "muted": False, "solo": False, "effect_count": 0, "effects": [], "send_target": "", "children": []}})
+        with self.assertRaises(TimeoutError):
+            self.client.wait_for_audio_bus(bus_name="Master", volume_db=-100.0, timeout=0.1, interval=0.02)
+
+    def test_wait_for_navigation_path_reachable(self) -> None:
+        self.client.set_response("navigation.query_path", {"ok": True, "path": {"reachable": True, "points": [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]], "point_count": 2, "path_length": 10.0, "start": [0.0, 0.0, 0.0], "target": [10.0, 0.0, 0.0], "dimension": 3}})
+        result = self.client.wait_for_navigation_path(start=(0, 0, 0), target=(10, 0, 0), reachable=True, timeout=1.0)
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["path"]["reachable"])
+
+
+class AudioExpectTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.client = _FakeGodotClient()
+        self.expect = AudioExpect(self.client)
+
+    def test_to_have_bus_volume_match(self) -> None:
+        self.client.set_response("audio.bus.info", {"ok": True, "bus": {"index": 0, "name": "Master", "volume_db": -6.0, "muted": False, "solo": False, "effect_count": 0, "effects": [], "send_target": "", "children": []}})
+        result = self.expect.to_have_bus_volume("Master", -6.0, timeout=1.0)
+        self.assertTrue(result["ok"])
+
+    def test_to_have_bus_volume_timeout(self) -> None:
+        self.client.set_response("audio.bus.info", {"ok": True, "bus": {"index": 0, "name": "Master", "volume_db": 0.0, "muted": False, "solo": False, "effect_count": 0, "effects": [], "send_target": "", "children": []}})
+        with self.assertRaises(TimeoutError):
+            self.expect.to_have_bus_volume("Master", -100.0, timeout=0.1)
+
+    def test_to_have_bus_muted(self) -> None:
+        self.client.set_response("audio.bus.info", {"ok": True, "bus": {"index": 0, "name": "Master", "volume_db": 0.0, "muted": True, "solo": False, "effect_count": 0, "effects": [], "send_target": "", "children": []}})
+        result = self.expect.to_have_bus_muted("Master", timeout=1.0)
+        self.assertTrue(result["ok"])
+
+    def test_not_to_have_bus_muted(self) -> None:
+        self.client.set_response("audio.bus.info", {"ok": True, "bus": {"index": 0, "name": "Master", "volume_db": 0.0, "muted": False, "solo": False, "effect_count": 0, "effects": [], "send_target": "", "children": []}})
+        result = self.expect.not_to_have_bus_muted("Master", timeout=1.0)
+        self.assertTrue(result["ok"])
+
+    def test_to_have_bus_effect_with_class(self) -> None:
+        self.client.set_response("audio.bus.info", {"ok": True, "bus": {"index": 0, "name": "Master", "volume_db": 0.0, "muted": False, "solo": False, "effect_count": 1, "effects": [{"index": 0, "class": "AudioEffectReverb", "enabled": True, "resource_name": ""}], "send_target": "", "children": []}})
+        result = self.expect.to_have_bus_effect("Master", "AudioEffectReverb", timeout=1.0)
+        self.assertTrue(result["ok"])
+
+    def test_to_have_bus_effect_enabled_filter(self) -> None:
+        self.client.set_response("audio.bus.info", {"ok": True, "bus": {"index": 0, "name": "Master", "volume_db": 0.0, "muted": False, "solo": False, "effect_count": 1, "effects": [{"index": 0, "class": "AudioEffectReverb", "enabled": False, "resource_name": ""}], "send_target": "", "children": []}})
+        with self.assertRaises(TimeoutError):
+            self.expect.to_have_bus_effect("Master", "AudioEffectReverb", enabled=True, timeout=0.1)
+
+    def test_to_be_playing(self) -> None:
+        self.client.set_response("node.evaluate", {"ok": True, "value": True})
+        result = self.expect.to_be_playing("#BgmPlayer", timeout=1.0)
+        self.assertTrue(result["ok"])
+
+    def test_not_to_be_playing(self) -> None:
+        self.client.set_response("node.evaluate", {"ok": True, "value": False})
+        result = self.expect.not_to_be_playing("#BgmPlayer", timeout=1.0)
+        self.assertTrue(result["ok"])
+
+    def test_to_have_pitch(self) -> None:
+        self.client.set_response("node.evaluate", {"ok": True, "value": 1.5})
+        result = self.expect.to_have_pitch("#BgmPlayer", 1.5, timeout=1.0)
+        self.assertTrue(result["ok"])
+
+    def test_to_have_volume_db(self) -> None:
+        self.client.set_response("node.evaluate", {"ok": True, "value": -3.0})
+        result = self.expect.to_have_volume_db("#BgmPlayer", -3.0, timeout=1.0)
+        self.assertTrue(result["ok"])
+
+
+class NavigationExpectTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.client = _FakeGodotClient()
+        self.expect = NavigationExpect(self.client)
+
+    def test_to_be_reachable(self) -> None:
+        self.client.set_response("navigation.query_path", {"ok": True, "path": {"reachable": True, "points": [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]], "point_count": 2, "path_length": 10.0, "start": [0.0, 0.0, 0.0], "target": [10.0, 0.0, 0.0], "dimension": 3}})
+        result = self.expect.to_be_reachable(start=(0, 0, 0), target=(10, 0, 0), timeout=1.0)
+        self.assertTrue(result["ok"])
+
+    def test_not_to_be_reachable(self) -> None:
+        self.client.set_response("navigation.query_path", {"ok": True, "path": {"reachable": False, "points": [], "point_count": 0, "path_length": 0.0, "start": [0.0, 0.0, 0.0], "target": [1000.0, 0.0, 0.0], "dimension": 3}})
+        result = self.expect.not_to_be_reachable(start=(0, 0, 0), target=(1000, 0, 0), timeout=1.0)
+        self.assertTrue(result["ok"])
+
+    def test_to_have_path_length(self) -> None:
+        self.client.set_response("navigation.query_path", {"ok": True, "path": {"reachable": True, "points": [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]], "point_count": 2, "path_length": 10.0, "start": [0.0, 0.0, 0.0], "target": [10.0, 0.0, 0.0], "dimension": 3}})
+        result = self.expect.to_have_path_length(start=(0, 0, 0), target=(10, 0, 0), length=10.0, timeout=1.0)
+        self.assertTrue(result["ok"])
+
+    def test_to_have_path_point_count(self) -> None:
+        self.client.set_response("navigation.query_path", {"ok": True, "path": {"reachable": True, "points": [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]], "point_count": 2, "path_length": 10.0, "start": [0.0, 0.0, 0.0], "target": [10.0, 0.0, 0.0], "dimension": 3}})
+        result = self.expect.to_have_path_point_count(start=(0, 0, 0), target=(10, 0, 0), count=2, timeout=1.0)
+        self.assertTrue(result["ok"])
+
+    def test_to_have_target_reached(self) -> None:
+        self.client.set_response("node.evaluate", {"ok": True, "value": True})
+        result = self.expect.to_have_target_reached("#NavAgent", timeout=1.0)
+        self.assertTrue(result["ok"])
+
+    def test_to_have_target_distance(self) -> None:
+        self.client.set_response("node.evaluate", {"ok": True, "value": 0.0})
+        result = self.expect.to_have_target_distance("#NavAgent", 0.0, timeout=1.0)
+        self.assertTrue(result["ok"])
+
+    def test_to_have_navigation_mesh(self) -> None:
+        self.client.set_response("node.evaluate", {"ok": True, "value": True})
+        result = self.expect.to_have_navigation_mesh("#NavRegion", timeout=1.0)
+        self.assertTrue(result["ok"])
+
+    def test_to_have_region_enabled(self) -> None:
+        self.client.set_response("node.evaluate", {"ok": True, "value": True})
+        result = self.expect.to_have_region_enabled("#NavRegion", timeout=1.0)
+        self.assertTrue(result["ok"])
 
 
 class Pathish:
