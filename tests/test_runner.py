@@ -1979,13 +1979,15 @@ class RunnerIntegrationTests(unittest.TestCase):
             (tests_dir / "test_editor_semantics.py").write_text(
                 textwrap.dedent(
                     """\
-                    def test_editor_semantics(godot, expect, editor_locator, editor_get_by_role, expect_engine, expect_editor, expect_physics2d, expect_physics3d, expect_project, expect_project_scene, expect_node_class, expect_resource_class, expect_script_class, expect_script, expect_script_file, expect_filesystem, expect_resource, expect_scene_file, expect_runtime_scene, expect_viewport, mode):
+                    def test_editor_semantics(godot, expect, editor_locator, editor_get_by_role, expect_engine, expect_editor, expect_physics2d, expect_physics3d, expect_audio, expect_navigation, expect_project, expect_project_scene, expect_node_class, expect_resource_class, expect_script_class, expect_script, expect_script_file, expect_filesystem, expect_resource, expect_scene_file, expect_runtime_scene, expect_viewport, mode):
                         if mode != "editor":
                             return
 
                         assert expect_engine is not None
                         assert expect_physics2d is not None
                         assert expect_physics3d is not None
+                        assert expect_audio is not None
+                        assert expect_navigation is not None
                         assert expect_viewport is not None
                         assert expect_runtime_scene is not None
                         expect(editor_locator("Panel")).to_exist()

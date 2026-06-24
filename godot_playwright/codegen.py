@@ -375,6 +375,23 @@ def _single_event_line(event_type: str, data: dict[str, Any]) -> str | None:
             fallback_z=data.get("to_z", 0.0),
         )
         return _call("godot.physics3d_ray", [from_x, from_y, from_z, to_x, to_y, to_z], _physics_query_kwargs(data, dimensions=3))
+    if event_type == "audio.bus.info":
+        kwargs: list[tuple[str, Any]] = []
+        if "bus_name" in data:
+            kwargs.append(("bus_name", data["bus_name"]))
+        if "bus_index" in data:
+            kwargs.append(("bus_index", data["bus_index"]))
+        return _call("godot.audio_bus_info", [], kwargs)
+    if event_type == "navigation.query_path":
+        start = data.get("start", [0.0, 0.0, 0.0])
+        target = data.get("target", [0.0, 0.0, 0.0])
+        dimension = int(data.get("dimension", 3))
+        kwargs = [("dimension", dimension)]
+        return _call(
+            "godot.navigation_query_path",
+            [list(start), list(target)],
+            kwargs,
+        )
     if event_type == "camera3d.ray":
         x, y = _vector2_components(data.get("screen_position", data), fallback_x=data.get("x", 0.0), fallback_y=data.get("y", 0.0))
         return _call("godot.camera3d_ray", [x, y], _camera3d_kwargs(data))

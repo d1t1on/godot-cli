@@ -656,6 +656,15 @@ class TraceCodegenTests(unittest.TestCase):
                     "collision_mask": 4,
                 },
             },
+            {"type": "audio.bus.info", "data": {"bus_name": "Master", "bus_index": 0}},
+            {
+                "type": "navigation.query_path",
+                "data": {
+                    "start": [0.0, 0.0, 0.0],
+                    "target": [1.0, 2.0, 3.0],
+                    "dimension": 3,
+                },
+            },
             {
                 "type": "camera3d.ray",
                 "data": {
@@ -754,6 +763,8 @@ class TraceCodegenTests(unittest.TestCase):
         self.assertIn("godot.physics3d_ray(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, collision_mask=4)", code)
         self.assertIn("godot.camera3d_ray(320.0, 180.0, camera='/root/Main/Camera3D', max_distance=250.0)", code)
         self.assertIn("godot.camera3d_pick(320.0, 180.0, camera='/root/Main/Camera3D', collide_with_bodies=False)", code)
+        self.assertIn("godot.audio_bus_info(bus_name='Master', bus_index=0)", code)
+        self.assertIn("godot.navigation_query_path([0.0, 0.0, 0.0], [1.0, 2.0, 3.0], dimension=3)", code)
         self.assertIn("godot.set_viewport_size(1280, 720)", code)
         self.assertIn("godot.fs_read_text('res://scripts/player.gd')", code)
         self.assertIn("godot.fs_read_bytes('res://assets/icon.png', max_bytes=2048)", code)
