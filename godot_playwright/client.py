@@ -667,6 +667,123 @@ class GodotClient:
             params["collision_mask"] = int(collision_mask)
         return self.rpc("physics3d.ray", params)
 
+    def audio_bus_info(
+        self,
+        *,
+        bus_name: str | None = None,
+        bus_index: int | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {}
+        if bus_name is not None:
+            params["bus_name"] = str(bus_name)
+        else:
+            params["bus_index"] = int(bus_index if bus_index is not None else 0)
+        return self.rpc("audio.bus.info", params)
+
+    def navigation_query_path(
+        self,
+        start: tuple[float, ...] | list[float],
+        target: tuple[float, ...] | list[float],
+        *,
+        dimension: int = 3,
+        navigation_layers: int | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {
+            "dimension": int(dimension),
+            "start_x": float(start[0]),
+            "start_y": float(start[1]),
+            "target_x": float(target[0]),
+            "target_y": float(target[1]),
+        }
+        if dimension == 3:
+            params["start_z"] = float(start[2])
+            params["target_z"] = float(target[2])
+        if navigation_layers is not None:
+            params["navigation_layers"] = int(navigation_layers)
+        return self.rpc("navigation.query_path", params)
+
+    def wait_for_audio_bus(
+        self,
+        *,
+        bus_name: str | None = None,
+        bus_index: int | None = None,
+        volume_db: float | None = None,
+        muted: bool | None = None,
+        solo: bool | None = None,
+        timeout: float = 5.0,
+        interval: float = 0.05,
+    ) -> dict[str, Any]:
+        deadline = time.monotonic() + timeout
+        last_result: dict[str, Any] = {}
+        while True:
+            result = self.audio_bus_info(bus_name=bus_name, bus_index=bus_index)
+            last_result = result
+            if not bool(result.get("ok", False)):
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(f"audio.bus.info failed: {result.get('errors', [])}")
+                time.sleep(interval)
+                continue
+            bus = result.get("bus", {})
+            matched = True
+            if volume_db is not None and abs(float(bus.get("volume_db", 0.0)) - volume_db) > 0.1:
+                matched = False
+            if muted is not None and bool(bus.get("muted", False)) != muted:
+                matched = False
+            if solo is not None and bool(bus.get("solo", False)) != solo:
+                matched = False
+            if matched:
+                return result
+            if time.monotonic() >= deadline:
+                observed = {
+                    "volume_db": bus.get("volume_db"),
+                    "muted": bus.get("muted"),
+                    "solo": bus.get("solo"),
+                }
+                raise TimeoutError(
+                    f"Audio bus did not reach expected state within {timeout}s; observed={observed}"
+                )
+            time.sleep(interval)
+
+    def wait_for_navigation_path(
+        self,
+        start: tuple[float, ...] | list[float],
+        target: tuple[float, ...] | list[float],
+        *,
+        dimension: int = 3,
+        navigation_layers: int | None = None,
+        reachable: bool | None = None,
+        path_length: float | None = None,
+        timeout: float = 5.0,
+        interval: float = 0.05,
+    ) -> dict[str, Any]:
+        deadline = time.monotonic() + timeout
+        last_result: dict[str, Any] = {}
+        while True:
+            result = self.navigation_query_path(start, target, dimension=dimension, navigation_layers=navigation_layers)
+            last_result = result
+            if not bool(result.get("ok", False)):
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(f"navigation.query_path failed: {result.get('errors', [])}")
+                time.sleep(interval)
+                continue
+            path = result.get("path", {})
+            matched = True
+            if reachable is not None and bool(path.get("reachable", False)) != reachable:
+                matched = False
+            if path_length is not None and abs(float(path.get("path_length", 0.0)) - path_length) > 0.1:
+                matched = False
+            if matched:
+                return result
+            if time.monotonic() >= deadline:
+                observed = {
+                    "reachable": path.get("reachable"),
+                    "path_length": path.get("path_length"),
+                }
+                raise TimeoutError(
+                    f"Navigation path did not reach expected state within {timeout}s; observed={observed}"
+                )
+            time.sleep(interval)
+
     def camera3d_ray(
         self,
         screen_x: float,
@@ -12388,6 +12505,302 @@ class SignalExpect:
         self.watch_id = str(watch["watch_id"])
 
 
+def _wait_for_node_value(
+    locator: "Locator",
+    expression: str,
+    expected: Any,
+    description: str,
+    *,
+    timeout: float = 5.0,
+    interval: float = 0.05,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout
+    while True:
+        value = locator.evaluate(expression)
+        if value == expected:
+            return {"ok": True, "value": value}
+        if time.monotonic() >= deadline:
+            raise TimeoutError(
+                f"Expected {locator} {description}; expected={expected!r}, observed={value!r}"
+            )
+        time.sleep(interval)
+
+
+class AudioExpect:
+    def __init__(self, client: GodotClient):
+        self.client = client
+
+    def to_have_bus_volume(
+        self, bus: str, volume_db: float, *, tolerance: float = 0.1, timeout: float = 5.0
+    ) -> dict[str, Any]:
+        try:
+            return self.client.wait_for_audio_bus(bus_name=bus, volume_db=volume_db, timeout=timeout)
+        except TimeoutError:
+            info = self.client.audio_bus_info(bus_name=bus)
+            observed = info.get("bus", {}).get("volume_db")
+            raise TimeoutError(
+                f"Expected bus '{bus}' volume_db to be {volume_db} (±{tolerance}); observed={observed}"
+            ) from None
+
+    def to_have_bus_muted(self, bus: str, *, timeout: float = 5.0) -> dict[str, Any]:
+        try:
+            return self.client.wait_for_audio_bus(bus_name=bus, muted=True, timeout=timeout)
+        except TimeoutError:
+            raise TimeoutError(f"Expected bus '{bus}' to be muted within {timeout}s") from None
+
+    def not_to_have_bus_muted(self, bus: str, *, timeout: float = 5.0) -> dict[str, Any]:
+        try:
+            return self.client.wait_for_audio_bus(bus_name=bus, muted=False, timeout=timeout)
+        except TimeoutError:
+            raise TimeoutError(f"Expected bus '{bus}' to not be muted within {timeout}s") from None
+
+    def to_have_bus_solo(self, bus: str, *, timeout: float = 5.0) -> dict[str, Any]:
+        try:
+            return self.client.wait_for_audio_bus(bus_name=bus, solo=True, timeout=timeout)
+        except TimeoutError:
+            raise TimeoutError(f"Expected bus '{bus}' to be soloed within {timeout}s") from None
+
+    def to_have_bus_effect(
+        self, bus: str, effect_class: str, *, enabled: bool | None = None, timeout: float = 5.0
+    ) -> dict[str, Any]:
+        deadline = time.monotonic() + timeout
+        interval = 0.05
+        while True:
+            info = self.client.audio_bus_info(bus_name=bus)
+            effects = info.get("bus", {}).get("effects", [])
+            for effect in effects:
+                if effect.get("class") == effect_class:
+                    if enabled is not None and bool(effect.get("enabled")) != enabled:
+                        continue
+                    return info
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"Expected bus '{bus}' to have effect '{effect_class}'"
+                    f"{' enabled=' + str(enabled) if enabled is not None else ''}"
+                    f" within {timeout}s; effects={effects}"
+                )
+            time.sleep(interval)
+
+    def to_have_bus(self, bus: str, *, timeout: float = 5.0) -> dict[str, Any]:
+        deadline = time.monotonic() + timeout
+        interval = 0.05
+        while True:
+            info = self.client.audio_bus_info(bus_name=bus)
+            if bool(info.get("ok", False)):
+                return info
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"Expected bus '{bus}' to exist within {timeout}s")
+            time.sleep(interval)
+
+    def to_be_playing(self, selector: str | dict, *, timeout: float = 5.0) -> dict[str, Any]:
+        locator = self.client.locator(selector)
+        return _wait_for_node_value(
+            locator, 'node.get("playing")', True, "to be playing", timeout=timeout
+        )
+
+    def not_to_be_playing(self, selector: str | dict, *, timeout: float = 5.0) -> dict[str, Any]:
+        locator = self.client.locator(selector)
+        return _wait_for_node_value(
+            locator, 'node.get("playing")', False, "to not be playing", timeout=timeout
+        )
+
+    def to_have_stream(
+        self, selector: str | dict, stream_path: str, *, timeout: float = 5.0
+    ) -> dict[str, Any]:
+        locator = self.client.locator(selector)
+        return _wait_for_node_value(
+            locator,
+            'node.get("stream").resource_path if node.get("stream") != null else ""',
+            stream_path,
+            f"to have stream '{stream_path}'",
+            timeout=timeout,
+        )
+
+    def to_have_pitch(
+        self, selector: str | dict, pitch: float, *, tolerance: float = 0.01, timeout: float = 5.0
+    ) -> dict[str, Any]:
+        locator = self.client.locator(selector)
+        deadline = time.monotonic() + timeout
+        interval = 0.05
+        while True:
+            value = locator.evaluate('node.get("pitch_scale")')
+            observed = float(value) if value is not None else None
+            if observed is not None and abs(observed - pitch) <= tolerance:
+                return {"ok": True, "value": observed}
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"Expected {selector} to have pitch {pitch} (±{tolerance}); observed={observed}"
+                )
+            time.sleep(interval)
+
+    def to_have_volume_db(
+        self, selector: str | dict, volume_db: float, *, tolerance: float = 0.1, timeout: float = 5.0
+    ) -> dict[str, Any]:
+        locator = self.client.locator(selector)
+        deadline = time.monotonic() + timeout
+        interval = 0.05
+        while True:
+            value = locator.evaluate('node.get("volume_db")')
+            observed = float(value) if value is not None else None
+            if observed is not None and abs(observed - volume_db) <= tolerance:
+                return {"ok": True, "value": observed}
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"Expected {selector} to have volume_db {volume_db} (±{tolerance}); observed={observed}"
+                )
+            time.sleep(interval)
+
+
+class NavigationExpect:
+    def __init__(self, client: GodotClient):
+        self.client = client
+
+    def to_be_reachable(
+        self,
+        start: tuple[float, ...] | list[float],
+        target: tuple[float, ...] | list[float],
+        *,
+        dimension: int = 3,
+        navigation_layers: int | None = None,
+        timeout: float = 5.0,
+    ) -> dict[str, Any]:
+        try:
+            return self.client.wait_for_navigation_path(
+                start, target, dimension=dimension, navigation_layers=navigation_layers,
+                reachable=True, timeout=timeout,
+            )
+        except TimeoutError:
+            raise TimeoutError(
+                f"Expected path from {start} to {target} to be reachable within {timeout}s"
+            ) from None
+
+    def not_to_be_reachable(
+        self,
+        start: tuple[float, ...] | list[float],
+        target: tuple[float, ...] | list[float],
+        *,
+        dimension: int = 3,
+        navigation_layers: int | None = None,
+        timeout: float = 5.0,
+    ) -> dict[str, Any]:
+        try:
+            return self.client.wait_for_navigation_path(
+                start, target, dimension=dimension, navigation_layers=navigation_layers,
+                reachable=False, timeout=timeout,
+            )
+        except TimeoutError:
+            raise TimeoutError(
+                f"Expected path from {start} to {target} to not be reachable within {timeout}s"
+            ) from None
+
+    def to_have_path_length(
+        self,
+        start: tuple[float, ...] | list[float],
+        target: tuple[float, ...] | list[float],
+        length: float,
+        *,
+        tolerance: float = 0.1,
+        dimension: int = 3,
+        timeout: float = 5.0,
+    ) -> dict[str, Any]:
+        try:
+            return self.client.wait_for_navigation_path(
+                start, target, dimension=dimension, path_length=length, timeout=timeout,
+            )
+        except TimeoutError:
+            result = self.client.navigation_query_path(start, target, dimension=dimension)
+            observed = result.get("path", {}).get("path_length")
+            raise TimeoutError(
+                f"Expected path length {length} (±{tolerance}); observed={observed}"
+            ) from None
+
+    def to_have_path_point_count(
+        self,
+        start: tuple[float, ...] | list[float],
+        target: tuple[float, ...] | list[float],
+        count: int,
+        *,
+        dimension: int = 3,
+        timeout: float = 5.0,
+    ) -> dict[str, Any]:
+        deadline = time.monotonic() + timeout
+        interval = 0.05
+        while True:
+            result = self.client.navigation_query_path(start, target, dimension=dimension)
+            observed = int(result.get("path", {}).get("point_count", 0))
+            if observed == count:
+                return result
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"Expected path point count {count}; observed={observed}"
+                )
+            time.sleep(interval)
+
+    def to_have_target_reached(
+        self, selector: str | dict, *, timeout: float = 5.0
+    ) -> dict[str, Any]:
+        locator = self.client.locator(selector)
+        return _wait_for_node_value(
+            locator, 'node.get("target_reached")', True, "to have target reached", timeout=timeout
+        )
+
+    def to_have_target_distance(
+        self, selector: str | dict, distance: float, *, tolerance: float = 0.1, timeout: float = 5.0
+    ) -> dict[str, Any]:
+        locator = self.client.locator(selector)
+        deadline = time.monotonic() + timeout
+        interval = 0.05
+        while True:
+            value = locator.evaluate('node.get("distance_to_target")')
+            observed = float(value) if value is not None else None
+            if observed is not None and abs(observed - distance) <= tolerance:
+                return {"ok": True, "value": observed}
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"Expected {selector} target distance {distance} (±{tolerance}); observed={observed}"
+                )
+            time.sleep(interval)
+
+    def to_have_pathway_point_count(
+        self, selector: str | dict, count: int, *, timeout: float = 5.0
+    ) -> dict[str, Any]:
+        locator = self.client.locator(selector)
+        deadline = time.monotonic() + timeout
+        interval = 0.05
+        while True:
+            value = locator.evaluate('node.get("pathway_points").size()')
+            observed = int(value) if value is not None else None
+            if observed is not None and observed == count:
+                return {"ok": True, "value": observed}
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"Expected {selector} pathway point count {count}; observed={observed}"
+                )
+            time.sleep(interval)
+
+    def to_have_navigation_mesh(
+        self, selector: str | dict, *, timeout: float = 5.0
+    ) -> dict[str, Any]:
+        locator = self.client.locator(selector)
+        deadline = time.monotonic() + timeout
+        interval = 0.05
+        while True:
+            value = locator.evaluate('node.get("navigation_mesh") != null')
+            if bool(value):
+                return {"ok": True, "value": True}
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"Expected {selector} to have a navigation mesh within {timeout}s")
+            time.sleep(interval)
+
+    def to_have_region_enabled(
+        self, selector: str | dict, *, timeout: float = 5.0
+    ) -> dict[str, Any]:
+        locator = self.client.locator(selector)
+        return _wait_for_node_value(
+            locator, 'node.get("enabled")', True, "to have region enabled", timeout=timeout
+        )
+
+
 class Physics2DExpect:
     def __init__(self, client: GodotClient):
         self.client = client
@@ -14426,6 +14839,14 @@ def expect_physics2d(client: GodotClient) -> Physics2DExpect:
 
 def expect_physics3d(client: GodotClient) -> Physics3DExpect:
     return Physics3DExpect(client)
+
+
+def expect_audio(client: GodotClient) -> AudioExpect:
+    return AudioExpect(client)
+
+
+def expect_navigation(client: GodotClient) -> NavigationExpect:
+    return NavigationExpect(client)
 
 
 def expect_project(client: GodotClient) -> ProjectExpect:

@@ -156,6 +156,8 @@ godot-playwright module add /tmp/agent-game quests
 godot-playwright module add /tmp/agent-game quests --demo
 godot-playwright module add /tmp/agent-game gameplay_events
 godot-playwright module add /tmp/agent-game gameplay_events --demo
+godot-playwright module add /tmp/agent-game dialogue
+godot-playwright module add /tmp/agent-game dialogue --demo
 ```
 
 The first gameplay module is `save_load`, a JSON slot save/load service. The
@@ -188,6 +190,8 @@ The `abilities` module adds a reusable `AbilityContainer` node backed by `Abilit
 The `quests` module adds a reusable `QuestLog` node backed by `QuestDefinition`, `ObjectiveDefinition`, and `QuestDatabase` Resources. It supports explicit quest start/fail/complete flow, objective progress, `all`/`any` completion policies, optional objectives, structured mutation results, JSON-compatible `get_state()` / `apply_state(data)`, and optional persistence through `save_load` when a log has a stable `save_id`. Rewards are reported in completion results but are not automatically granted.
 
 The `gameplay_events` module provides a Resource-driven event bus for explicit cross-system gameplay announcements. It supports stable `EventDefinition` Resources, an `EventDatabase`, synchronous `emit_event()`, queued `queue_event()` / `flush_events()`, one-argument subscriptions, JSON-compatible history/state, and no direct dependency on other gameplay modules.
+
+The `dialogue` module adds a Resource-driven branching dialogue system. It provides `DialogueLineDefinition`, `DialogueChoiceDefinition`, `DialogueDefinition`, and `DialogueDatabase` Resources, plus a `DialogueRunner` node that drives conversations via `start_dialogue()`, `select_choice()`, `advance()`, and `stop_dialogue()`. It supports JSON-compatible variables and state, optional save/load persistence via `save_id`, conditions as Godot `Expression` against variables, and no direct dependencies on other modules.
 
 Probe runtime startup for script errors and warning/error log diagnostics:
 
@@ -651,6 +655,33 @@ def test_physics_queries(godot, expect, expect_physics2d, expect_physics3d):
     expect(camera).to_pick_camera_collision(640, 360, name="PlayerBody")
     camera.click_3d(640, 360, name="PlayerBody")
     camera.drag_3d(640, 360, 700, 360, name="PlayerBody", steps=4)
+```
+
+Audio assertions check AudioServer bus state and AudioStreamPlayer node state:
+
+```python
+def test_audio(godot, expect_audio):
+    player = godot.locator("#BgmPlayer")
+    player.call("play")
+    expect_audio.to_be_playing("#BgmPlayer")
+    expect_audio.to_have_bus_volume("Master", 0.0, tolerance=0.1)
+    godot.evaluate('AudioServer.set_bus_mute(AudioServer.get_bus_index("Music"), true)')
+    expect_audio.to_have_bus_muted("Music", timeout=1.0)
+    expect_audio.to_have_pitch("#BgmPlayer", 1.0)
+    expect_audio.to_have_volume_db("#BgmPlayer", 0.0)
+```
+
+Navigation assertions check path reachability and NavigationAgent/Region node state:
+
+```python
+def test_navigation(godot, expect_navigation):
+    expect_navigation.to_be_reachable(start=(0, 0, 0), target=(10, 0, 0))
+    expect_navigation.to_have_path_length(start=(0, 0, 0), target=(10, 0, 0), length=10.0, tolerance=0.5)
+    agent = godot.locator("#NavAgent")
+    expect_navigation.to_have_target_reached("#NavAgent", timeout=5.0)
+    expect_navigation.to_have_target_distance("#NavAgent", 0.0, tolerance=0.1)
+    expect_navigation.to_have_navigation_mesh("#NavRegion")
+    expect_navigation.to_have_region_enabled("#NavRegion")
 ```
 
 InputMap helpers let tests create temporary game actions and bind keys, mouse

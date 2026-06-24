@@ -334,6 +334,10 @@ func _dispatch(method: String, params: Dictionary) -> Dictionary:
 			return _rpc_physics3d_point(params)
 		"physics3d.ray":
 			return _rpc_physics3d_ray(params)
+		"audio.bus.info":
+			return _rpc_audio_bus_info(params)
+		"navigation.query_path":
+			return _rpc_navigation_query_path(params)
 		"camera3d.ray":
 			return _rpc_camera3d_ray(params)
 		"camera3d.pick":
@@ -677,6 +681,8 @@ func _protocol_method_names() -> Array:
 		"physics2d.ray",
 		"physics3d.point",
 		"physics3d.ray",
+		"audio.bus.info",
+		"navigation.query_path",
 		"camera3d.ray",
 		"camera3d.pick",
 		"node.class.describe",
@@ -2282,6 +2288,119 @@ func _rpc_physics3d_ray(params: Dictionary) -> Dictionary:
 		"to": _encode_value(to),
 		"hit": hit,
 		"collision": collision,
+	})
+
+
+func _rpc_audio_bus_info(params: Dictionary) -> Dictionary:
+	var bus_index := 0
+	if params.has("bus_name"):
+		var bus_name := String(params["bus_name"])
+		bus_index = AudioServer.get_bus_index(bus_name)
+		if bus_index < 0:
+			return _fail("Unknown bus name: %s" % bus_name)
+	elif params.has("bus_index"):
+		bus_index = int(params["bus_index"])
+		if bus_index < 0 or bus_index >= AudioServer.get_bus_count():
+			return _fail("Invalid bus index: %d" % bus_index)
+
+	var bus_name := AudioServer.get_bus_name(bus_index)
+	var volume_db := AudioServer.get_bus_volume_db(bus_index)
+	var muted := AudioServer.is_bus_mute(bus_index)
+	var solo := AudioServer.is_bus_solo(bus_index)
+	var effect_count := AudioServer.get_bus_effect_count(bus_index)
+	var effects: Array = []
+	for i in range(effect_count):
+		var effect = AudioServer.get_bus_effect(bus_index, i)
+		effects.append({
+			"index": i,
+			"class": effect.get_class() if effect != null else "",
+			"enabled": AudioServer.is_bus_effect_enabled(bus_index, i),
+			"resource_name": effect.resource_name if effect != null else "",
+		})
+
+	var send_target := String(AudioServer.get_bus_send(bus_index))
+
+	var children: Array = []
+	for i in range(AudioServer.get_bus_count()):
+		if i == bus_index:
+			continue
+		if AudioServer.get_bus_send(i) == bus_name:
+			children.append({"index": i, "name": AudioServer.get_bus_name(i)})
+
+	_record_event("audio.bus.info", {"bus_name": bus_name, "bus_index": bus_index})
+	return _ok({
+		"bus": {
+			"index": bus_index,
+			"name": bus_name,
+			"volume_db": volume_db,
+			"muted": muted,
+			"solo": solo,
+			"effect_count": effect_count,
+			"effects": effects,
+			"send_target": send_target,
+			"children": children,
+		}
+	})
+
+
+func _rpc_navigation_query_path(params: Dictionary) -> Dictionary:
+	var dimension := int(params.get("dimension", 3))
+	var start_x := float(params.get("start_x", 0.0))
+	var start_y := float(params.get("start_y", 0.0))
+	var start_z := float(params.get("start_z", 0.0))
+	var target_x := float(params.get("target_x", 0.0))
+	var target_y := float(params.get("target_y", 0.0))
+	var target_z := float(params.get("target_z", 0.0))
+
+	var reachable := false
+	var points: Array = []
+	var path_length := 0.0
+
+	if dimension == 2:
+		var start_pos := Vector2(start_x, start_y)
+		var target_pos := Vector2(target_x, target_y)
+		var map_rid := get_viewport().world_2d.get_navigation_map()
+		var start_snapped := NavigationServer2D.map_get_closest_point(map_rid, start_pos)
+		var target_snapped := NavigationServer2D.map_get_closest_point(map_rid, target_pos)
+		var path := NavigationServer2D.map_get_path(map_rid, start_snapped, target_snapped, true)
+		if not path.is_empty():
+			reachable = true
+			for i in range(path.size()):
+				points.append([float(path[i].x), float(path[i].y)])
+			for i in range(1, path.size()):
+				path_length += path[i].distance_to(path[i - 1])
+	elif dimension == 3:
+		var start_pos := Vector3(start_x, start_y, start_z)
+		var target_pos := Vector3(target_x, target_y, target_z)
+		var map_rid := get_viewport().world_3d.get_navigation_map()
+		var start_snapped := NavigationServer3D.map_get_closest_point(map_rid, start_pos)
+		var target_snapped := NavigationServer3D.map_get_closest_point(map_rid, target_pos)
+		var path := NavigationServer3D.map_get_path(map_rid, start_snapped, target_snapped, true)
+		if not path.is_empty():
+			reachable = true
+			for i in range(path.size()):
+				points.append([float(path[i].x), float(path[i].y), float(path[i].z)])
+			for i in range(1, path.size()):
+				path_length += path[i].distance_to(path[i - 1])
+	else:
+		return _fail("dimension must be 2 or 3")
+
+	_record_event("navigation.query_path", {
+		"dimension": dimension,
+		"reachable": reachable,
+		"point_count": points.size(),
+		"path_length": path_length,
+	})
+	return _ok({
+		"path": {
+			"reachable": reachable,
+			"points": points,
+			"point_count": points.size(),
+			"path_length": path_length,
+			"start": [start_x, start_y, start_z] if dimension == 3 else [start_x, start_y],
+			"target": [target_x, target_y, target_z] if dimension == 3 else [target_x, target_y],
+			"dimension": dimension,
+		}
 	})
 
 

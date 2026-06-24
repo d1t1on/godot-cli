@@ -272,6 +272,24 @@ matching positive and negative assertions.
   before sending viewport mouse input; the addon supplements 3D
   `CollisionObject3D.input_event` dispatch under the headless display driver so
   these actions are testable in CI.
+- `audio.bus.info`: query `AudioServer` bus state by name or index. Parameters:
+  `bus_name` (String, optional) resolves a bus by name and takes precedence
+  over `bus_index`; `bus_index` (int, optional, default `0`) resolves a bus by
+  index. The response is a bus snapshot with `index`, `name`, `volume_db`,
+  `muted`, `solo`, `effect_count`, `effects` array, `send_target`, and
+  `children` array. Python exposes `expect_audio(godot)` for retryable
+  playback state, bus volume, bus mute, bus solo, AudioStreamPlayer pitch, and
+  AudioStreamPlayer volume_db assertions.
+- `navigation.query_path`: query navigation path reachability through
+  `NavigationServer`. Parameters: `start_x`, `start_y`, `start_z` (float) for
+  the start position (z ignored for 2D); `target_x`, `target_y`, `target_z`
+  (float) for the target position (z ignored for 2D); `dimension` (int,
+  default `3`) selects 2D or 3D; `navigation_layers` (int, optional) is a
+  layer bitmask filter. The response includes `reachable`, `points`,
+  `point_count`, `path_length`, `start`, `target`, and `dimension`. Python
+  exposes `expect_navigation(godot)` for retryable reachability, path length,
+  NavigationAgent target-reached, NavigationAgent target distance,
+  NavigationRegion mesh, and NavigationRegion enabled assertions.
 - `tree.snapshot`: JSON snapshot of a subtree. Python exposes whole-scene
   snapshots through `godot.snapshot(...)` and locator-scoped snapshots through
   `locator.snapshot(...)`, `snapshot_nodes()`, `snapshot_texts()`,
